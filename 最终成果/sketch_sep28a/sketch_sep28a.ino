@@ -24,11 +24,13 @@ void loop() {
     if(input=='O'){
       gripper.write(120);
       delay(speed);
+      Serial.println("open");
     }
     //接收字符‘S'
     if(input=='S'){
       gripper.write(30);
       delay(speed);
+      Serial.println("close")
     }
     //接收字符'H'
     if(input=='H'){
@@ -36,6 +38,8 @@ void loop() {
       if(speed<100){
         speed=100;
       }
+      Serial.print("速度=");
+      Serial.println(speed);
     }
     //接收字符‘L'
     if(input=='L'){
@@ -43,6 +47,8 @@ void loop() {
       if(speed>2000){
         speed=2000;
       }
+      Serial.print("速度=");
+      Serial.println(speed);
     }
   }
 }
