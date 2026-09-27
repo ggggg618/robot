@@ -1,15 +1,24 @@
 #include<Servo.h>
+
+//存放数据处--------------
+//引脚
+const int bottom_yijiao= ;
+const int left_yijiao= ;
+const int right_yijiao= ;
+const int gripper_yijiao= ;
+
 int speed;//用来控制机械臂的整体速度
 Servo bottom;//底座
 Servo left;//左边
 Servo right;//右边
 Servo gripper;//夹爪
+
 void setup() {
   //接引脚
-  bottom.attach();
-  left.attach();
-  right.attach();
-  gripper.attach();//引脚还没填 
+  bottom.attach(bottom_yijiao);
+  left.attach(left_yijiao);
+  right.attach(right_yijiao);
+  gripper.attach(gripper_yijiao);
   //串口初始化
   Serial.begin(9600);
   //速度初始化
