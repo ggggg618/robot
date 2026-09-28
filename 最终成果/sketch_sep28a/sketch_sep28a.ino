@@ -8,6 +8,7 @@ const int right_yijiao= ;
 const int gripper_yijiao= ;
 
 int speed;//用来控制机械臂的整体速度
+int angle;//角度
 Servo bottom;//底座
 Servo left;//左边
 Servo right;//右边
@@ -36,13 +37,13 @@ void loop() {
       Serial.println("open");
     }
     //接收字符‘S'
-    if(input=='S'){
+    else if(input=='S'){
       gripper.write(30);
       delay(speed);
-      Serial.println("close")
+      Serial.println("close");
     }
     //接收字符'H'
-    if(input=='H'){
+    else if(input=='H'){
       speed-=100;
       if(speed<100){
         speed=100;
@@ -51,13 +52,25 @@ void loop() {
       Serial.println(speed);
     }
     //接收字符‘L'
-    if(input=='L'){
+    else if(input=='L'){
       speed+=100;
       if(speed>2000){
         speed=2000;
       }
       Serial.print("速度=");
       Serial.println(speed);
+    }
+    else if(input=='b'){
+      angle=Serial.parseInt();
+      bottom.write(angle);
+    }
+    else if(input=='l'){
+      angle=Serial.parseInt();
+      left.write(angle);
+    }
+    else if(input=='r'){
+      angle=Serial.parseInt();
+      right.write(angle);
     }
   }
 }
