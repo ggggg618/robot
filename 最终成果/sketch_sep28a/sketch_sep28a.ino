@@ -24,6 +24,15 @@ const int left_yijiao=8;
 const int right_yijiao=7;
 const int claw_yijiao=6;
 
+//变量声明
+int speed;//用来控制机械臂的整体速度
+int angle;//角度
+bool change=true;//模式开关：true=摇杆模式，false=串口指令模式
+Servo bottom;//底座
+Servo left;//左边
+Servo right;//右边
+Servo claw;//夹爪
+
 /*为完成多舵机协同控制，并防止上位机输入数据的格式没有按顺序
 用findangle函数来返回舵机所对应角度*/
 int findangle(String s,char label){
@@ -54,14 +63,28 @@ void moveServo(Servo &s, int target, int stepDelay) {
     }
   }
 }
+// 把 4 个舵机同时移动到指定角度
+void moveTo(int b, int l, int r, int c, int spd) {
+  moveServo(bottom, b, spd);   // 底座
+  moveServo(left, l, spd);     // 肩
+  moveServo(right, r, spd);    // 肘
+  moveServo(claw, c, spd);     // 夹爪
+}
+//以下写任务二的三个动作
+//A
+void grabA(){
+  moveTo(,,,,);
+}
+//B
+void grabB(){
+  moveTo(,,,,);
+}
+//C
+void grabC(){
+  moveTo(,,,,);
+}
 
-int speed;//用来控制机械臂的整体速度
-int angle;//角度
-bool change=true;//模式开关：true=摇杆模式，false=串口指令模式
-Servo bottom;//底座
-Servo left;//左边
-Servo right;//右边
-Servo claw;//夹爪
+
 
 
 void setup() {
@@ -126,6 +149,18 @@ void loop() {
       }
       Serial.print("速度=");
       Serial.println(speed);
+    }
+    else if(input=="A"){
+      grabA();
+      Serial.println("A finish");
+    }
+    else if(input=="B"){
+      grabB();
+      Serial.println("B finish");
+    }
+    else if(input=="C"){
+      grabC();
+      Serial.println("C finish");
     }
     else{
     //实现舵机控制
