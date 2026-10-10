@@ -25,13 +25,21 @@ const int right_yijiao=7;
 const int claw_yijiao=6;
 
 //变量声明
-int speed;//速度控制(并非任务一里面的那个整体速度)
+int moveDelay;//每步移动的延时（越小越快），H/L 调速用
 int angle;//角度
+int cycle=0;//用来记录任务三按键1的点击次数
+int number=0;//用来记录任务三按键2录制时位置个数
 bool change=true;//模式开关：true=摇杆模式，false=串口指令模式
+bool recording=false;//用来记录是否在录制中
 Servo bottom;//底座
 Servo left;//左边
 Servo right;//右边
 Servo claw;//夹爪
+//数组变量声明（用来处理任务三中的录制和播放）
+int bottomR[200];
+int leftR[200];
+int rightR[200];
+int clawR[200];
 
 /*为完成多舵机协同控制，并防止上位机输入数据的格式没有按顺序
 用findangle函数来返回舵机所对应角度*/
@@ -73,18 +81,16 @@ void moveTo(int b, int l, int r, int c, int spd) {
 //以下写任务二的三个动作
 //A
 void grabA(){
-  moveTo(,,,,);
+  moveTo(90,90,90,60,moveDelay);
 }
 //B
 void grabB(){
-  moveTo(,,,,);
+  moveTo(90,90,90,60,moveDelay);
 }
 //C
 void grabC(){
-  moveTo(,,,,);
+  moveTo(90,90,90,60,moveDelay);
 }
-
-
 
 
 void setup() {
@@ -96,10 +102,26 @@ void setup() {
   //串口初始化
   Serial.begin(9600);
   //速度初始化
-  speed=10;
+  moveDelay=10;
 }
 
 void loop() {
+  // =====录制状态=====
+  if(recording){
+    int b=map(analogRead(A0),0,1023,0,180);
+    int l=map(analogRead(A1),0,1023,0,180);
+    int r=map(analogRead(A2),0,1023,0,180);
+    int c=map(analogRead(A3),0,1023,0,180);
+    bottom.write(b); left.write(l); right.write(r); claw.write(c);
+    //存位置到数组中
+    bottomR[number]=b;
+    leftR[number]=l;
+    rightR[number]=r;
+    clawR[number]=c;
+    number++;
+    if(number>=200)number=200;
+    delay(100);
+  }
   // ===== 摇杆模式：实时操控（默认模式）=====
   if(change){
   int x1=analogRead(A0),//底座（摇杆1的X轴）
@@ -124,31 +146,31 @@ void loop() {
       Serial.println("串口模式");
     //接收O
     if(input=="O"){
-      moveServo(claw, 120, speed);
+      moveServo(claw, 30, moveDelay);
       Serial.println("open");
     }
     //接收S
     else if(input=="S"){
-      moveServo(claw, 30, speed);
+      moveServo(claw, 120, moveDelay);
       Serial.println("close");
     }
     //接收H
     else if(input=="H"){
-      speed-=2;
-      if(speed<2){
-        speed=2;
+      moveDelay-=2;
+      if(moveDelay<2){
+        moveDelay=2;
       }
-      Serial.print("速度=");
-      Serial.println(speed);
+      Serial.print("延时=");
+      Serial.println(moveDelay);
     }
     //接收L
     else if(input=="L"){
-      speed+=2;
-      if(speed>50){
-        speed=50;
+      moveDelay+=2;
+      if(moveDelay>50){
+        moveDelay=50;
       }
-      Serial.print("速度=");
-      Serial.println(speed);
+      Serial.print("延时=");
+      Serial.println(moveDelay);
     }
     //任务二 三个动作
     else if(input=="A"){
@@ -167,19 +189,42 @@ void loop() {
     //任务三四个按键
     //循环
     else if(input=="K1"){
-
+      cycle++;
+      if(cycle>3)cycle=1;
+      if(cycle==1){
+        grabA();
+      }else if(cycle==2){
+        grabB();
+      }else{
+        grabC();
+      }
+      Serial.println("夹取完毕");
     }
     //录制
     else if(input=="K2"){
-
+      recording=!recording;
+      if(recording){
+        number=0;
+        Serial.println("开始录制");
+      }else{
+        Serial.println("停止录制");
+      }
     }
     //播放
     else if(input=="K3"){
-
+      Serial.println("开始播放");
+      for(int i=0;i<number;i++){
+        bottom.write(bottomR[i]);
+        left.write(leftR[i]);
+        right.write(rightR[i]);
+        claw.write(clawR[i]);
+        delay(100);
+      }
+      Serial.println("播放完毕");
     }
     //回中
     else if(input=="K4"){
-      moveTo(90,90,90,60,speed);
+      moveTo(90,90,90,60,moveDelay);
     }
     else{
     //实现舵机控制
@@ -187,10 +232,10 @@ void loop() {
     int l=findangle(input,'l');
     int r=findangle(input,'r');
     int c=findangle(input,'c');
-    moveServo(bottom, b, speed);
-    moveServo(left, l, speed);
-    moveServo(right, r, speed);
-    moveServo(claw, c, speed);
+    moveServo(bottom, b, moveDelay);
+    moveServo(left, l, moveDelay);
+    moveServo(right, r, moveDelay);
+    moveServo(claw, c, moveDelay);
     }
     }
   }
