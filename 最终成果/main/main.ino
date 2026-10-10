@@ -25,7 +25,7 @@ const int right_yijiao=7;
 const int claw_yijiao=6;
 
 //变量声明
-int speed;//用来控制机械臂的整体速度
+int speed;//速度控制(并非任务一里面的那个整体速度)
 int angle;//角度
 bool change=true;//模式开关：true=摇杆模式，false=串口指令模式
 Servo bottom;//底座
@@ -150,6 +150,7 @@ void loop() {
       Serial.print("速度=");
       Serial.println(speed);
     }
+    //任务二 三个动作
     else if(input=="A"){
       grabA();
       Serial.println("A finish");
@@ -161,6 +162,24 @@ void loop() {
     else if(input=="C"){
       grabC();
       Serial.println("C finish");
+    }
+
+    //任务三四个按键
+    //循环
+    else if(input=="K1"){
+
+    }
+    //录制
+    else if(input=="K2"){
+
+    }
+    //播放
+    else if(input=="K3"){
+
+    }
+    //回中
+    else if(input=="K4"){
+      moveTo(90,90,90,60,speed);
     }
     else{
     //实现舵机控制
