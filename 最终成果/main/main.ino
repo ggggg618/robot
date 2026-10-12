@@ -63,14 +63,14 @@ int findangle(String s,char label){
 // stepDelay 越小 → 移动越快（H/L 调速的底层实现）
 void moveServo(Servo &s, int target, int stepDelay) {
   int current = s.read();   // 读当前角度（上次 write 的值）
-  // 目标比当前大 → 递增扫过去
+  // 目标比当前大 递增扫过去
   if (current < target) {
     for (int a = current; a <= target; a++) {
       s.write(a);           // 每步转 1 度
       delay(stepDelay);     // 每步停一下，控制速度
     }
   }
-  // 目标比当前小 → 递减扫过去
+  // 目标比当前小 递减扫过去
   else if (current > target) {
     for (int a = current; a >= target; a--) {
       s.write(a);
