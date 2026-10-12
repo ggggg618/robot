@@ -1,59 +1,93 @@
 #include<Servo.h>
 
+
 /*
- * ===== 机械臂控制程序=====
+ * =========机械臂控制程序（主控板）============
  *
- * 本程序实现任务一的功能：
- *   1. 双摇杆实时操控 4 个关节（基础控制）
- *   2. 串口固定指令 O/S/H/L（固定指令通信）
- *   3. b/l/r/c 数字指令控制各关节（多舵机协同）
+ * 【硬件连接】
+ *   舵机引脚：
+ *     底座             D9
+ *     肩（左臂）        D8
+ *     肘（右臂）        D7
+ *     夹爪             D6
+ *   摇杆引脚：
+ *     A0  摇杆1 X轴 → 控制底座
+ *     A1  摇杆2 Y轴 → 控制夹爪
+ *     A2  摇杆2 X轴 → 控制肘
+ *     A3  摇杆1 Y轴 → 控制肩
  *
- * 串口指令一览：
- *   J                切回摇杆模式
- *   O / S            夹爪张开 / 关闭
- *   H / L            加速 / 减速
- *   b90,l60,r30,c20  底座90°、肩60°、肘30°、夹爪20°
- *
- * 引脚：底座9、肩（左）8、肘（右）7、夹爪6
+ * 【串口指令一览】
+ *   任务一·基础控制
+ *     J                   切回摇杆模式
+ *     O / S               夹爪张开 / 关闭
+ *     H / L               加速 / 减速
+ *     b90,l60,r30,c20     多舵机协同（底座/肩/肘/夹爪的角度）
+ *   任务二·夹取动作
+ *     A / B / C           夹取物体A/B/C并放置
+ *   任务三·遥控板按键
+ *     K1                  循环夹取
+ *     K2                  开始/停止录制动作
+ *     K3                  播放录制的动作
+ *     K4                  回中
+ *   任务五·绘图
+ *     D                   画直线
+ *     T                   画三角形
+ *     K5                  绘制过程中：暂停/继续切换
+ *     K6                  绘制过程中：取消
+ *     K7                  记录一个示教点（前5次记录，第6次清空）
+ *     K8                  画五点折线
+ *     K9                  画五点平滑曲线
  */
 
-//存放数据处--------------
-//引脚
-const int bottom_yijiao=9;
-const int left_yijiao=8;
-const int right_yijiao=7;
-const int claw_yijiao=6;
-//任务五数据
-float L1=20;//底座到肩的长度
-float L2=60;//后臂长
-float L3=30;//前臂长
-float L4=40;//夹爪尖到前臂尖长度
-float inpaper=5;//纸面高度
-float outpaper=30;//抬笔时高度
 
-//变量声明
-int moveDelay;//每步移动的延时（越小越快），H/L 调速用
-int angle;//角度
-int cycle=0;//用来记录任务三按键1的点击次数
-int number=0;//用来记录任务三按键2录制时位置个数
-bool change=true;//模式开关：true=摇杆模式，false=串口指令模式
-bool recording=false;//用来记录是否在录制中
-bool stop=false;//用来记录是否处于停止状态
-bool cancel=false;//用来确认是否取消绘制任务
-Servo bottom;//底座
-Servo left;//左边
-Servo right;//右边
-Servo claw;//夹爪
-//数组变量声明（用来处理任务三中的录制和播放）
-byte bottomR[120];
-byte leftR[120];
-byte rightR[120];
-byte clawR[120];
+//========存放数据处=========
+//引脚
+const int bottom_yijiao=9;  //底座
+const int left_yijiao=8;    //左边
+const int right_yijiao=7;   //右边
+const int claw_yijiao=6;    //夹爪
+const int frequency=170;    //用于任务3录制的数组
+const int recordDelay=70;   //录制时每两个点之间的间隔（毫秒）
+//任务五---机械臂数据
+float L1=20;                //底座到肩的长度
+float L2=60;                //后臂长
+float L3=30;                //前臂长
+float L4=40;                //夹爪尖到前臂尖长度
+float inpaper=5;            //纸面高度
+float outpaper=30;          //抬笔时高度
+
+
+//========变量声明=======
+int moveDelay;              //每步移动的延时（越小越快），H/L 调速用
+int angle;                  //角度
+int cycle=0;                //用来记录任务三按键1的点击次数
+int number=0;               //用来记录任务三按键2录制时位置个数
+int number1=0;              //用来记录五点视教已经记录的位置数
+bool change=true;           //模式开关：true=摇杆模式，false=串口指令模式
+bool recording=false;       //用来记录是否在录制中
+bool stop=false;            //用来记录是否处于停止状态
+bool cancel=false;          //用来确认是否取消绘制任务
+Servo bottom;               //底座
+Servo left;                 //左边
+Servo right;                //右边
+Servo claw;                 //夹爪
+//数组变量声明（用来处理录制和播放）
+byte bottomR[frequency];
+byte leftR[frequency];
+byte rightR[frequency];
+byte clawR[frequency];
+float x[5],y[5],z[5];//用来记录五个点的坐标
 //摇杆控制模式下记录当前舵机角度
 int bottomAngle=90, leftAngle=90, rightAngle=90, clawAngle=60;
 
-/*为完成多舵机协同控制，并防止上位机输入数据的格式没有按顺序
-用findangle函数来返回舵机所对应角度*/
+
+//=========函数库=========
+
+/*
+为完成多舵机协同控制，并防止上位机输入数据的格式没有按顺序
+用findangle函数来返回舵机所对应角度
+例如输入 "b90,l60,r30,c20"，findangle(s,'b') 返回 90
+*/
 int findangle(String s,char label){
   int num=s.indexOf(label);//找到编号的位置
   if(num==-1){
@@ -62,9 +96,12 @@ int findangle(String s,char label){
   else return s.substring(++num).toInt();
 }
 
-// 从当前角度平滑移动到目标角度，stepDelay 控制速度
-// 原理：不直接 write(目标)，而是每次加/减 1 度，每步 delay 一下
-// stepDelay 越小 → 移动越快（H/L 调速的底层实现）
+/*
+用moveServo函数来使机械臂活动流畅 不卡顿
+从当前角度平滑移动到目标角度，stepDelay 控制速度
+原理：不直接 write(目标)，而是每次加/减 1 度，每步 delay 一下
+stepDelay 越小 移动越快
+*/
 void moveServo(Servo &s, int target, int stepDelay) {
   int current = s.read();   // 读当前角度（上次 write 的值）
   // 目标比当前大 递增扫过去
@@ -83,7 +120,11 @@ void moveServo(Servo &s, int target, int stepDelay) {
   }
 }
 
-//摇杆控制逻辑：偏移的越远，速度越快
+/*
+用pole函数来完成任务一要求的摇杆控制舵机
+摇杆控制逻辑：偏移的越远，速度越快
+原理为依赖偏移量 给角度加/减偏移量来实现速度控制
+*/
 void pole(){
   int x1=analogRead(A0),//底座（摇杆1的X轴）
       x2=analogRead(A3),//肩（摇杆1的Y轴）
@@ -106,34 +147,52 @@ void pole(){
   left.write(leftAngle);
   right.write(rightAngle);
   claw.write(clawAngle);
-  delay(20);
 }
 
-// 把 4 个舵机同时移动到指定角度
+/*
+用moveTo函数把 4 个舵机同时移动到指定角度
+其中 b-底座 l-左边 r-右边 c-夹爪 spd-延时
+*/
 void moveTo(int b, int l, int r, int c, int spd) {
-  moveServo(bottom, b, spd);   // 底座
-  moveServo(left, l, spd); // 肩
-  moveServo(right, r, spd);    // 肘
-  moveServo(claw, c, spd);     // 夹爪
+  moveServo(bottom, b, spd);
+  moveServo(left, l, spd);
+  moveServo(right, r, spd);
+  moveServo(claw, c, spd);
 }
-//以下写任务二的三个动作
-//A
+
+/*
+任务二夹取动作
+A B C 函数使用逻辑都为调用moveTo函数来完成移动
+*/
 void grabA(){
   moveTo(90,90,90,60,moveDelay);
 }
-//B
 void grabB(){
   moveTo(90,90,90,60,moveDelay);
 }
-//C
+
 void grabC(){
   moveTo(90,90,90,60,moveDelay);
 }
 
-/*任务五的逆解函数
-a1--底座角度
-a2--肩(左)的关节角
-a3--肘(右)的关节角
+//      ========任务五·运动学=========
+//a1--底座角度 a2--肩(左)的关节角 a3--肘(右)的关节角
+/*
+机械臂的正解
+输入三个舵机角度，算出笔尖坐标 x/y/z
+*/
+void foreanswer(float a1,float a2,float a3,float &x,float &y,float &z){
+  float a11=a1/180*PI;
+  float a22=a2/180*PI;
+  float a33=a3/180*PI;
+  x=(L2*cos(a22)+L3*cos(a22+a33)+L4)*cos(a11);
+  y=(L2*cos(a22)+L3*cos(a22+a33)+L4)*sin(a11);
+  z=L1+L2*sin(a22)+L3*sin(a22+a33);
+}
+
+/*
+机械臂的逆解
+输入笔尖坐标 x/y/z，算出三个舵机角度 a1/a2/a3
 */
 
 void backanswer(float x,float y,float z,float &a1,float &a2,float &a3){
@@ -147,21 +206,30 @@ void backanswer(float x,float y,float z,float &a1,float &a2,float &a3){
   a2=(arph-beta)*180.0/PI;//肩（左）的关节角
 }
 
-/*任务五：画一条直线
-x1,y1--起点坐标
-x2,y2--终点坐标
+//     ==========任务五·绘制==========
+/*
+check函数用以在子任务三中检查是否有暂停/继续/取消
+K5 = 暂停/继续切换，K6 = 取消
 */
-
-//用以在子任务三中检查是否有暂停/继续/取消
 void check(){
-  if(Serial.available>0){
-    char s=Serial.read();
-    if(s=='K5'){stop=true;Serial.println("已暂停");}
-    if(s=='K6'){stop=false;Serial.println("已继续");}
-    if(s=='K7'){cancel=true;Serial.println("已取消");}
+  if(Serial.available()>0){
+    String s=Serial.readString();
+    s.trim();
+    if(s=="K5"){
+      stop=!stop;
+      if(stop){
+        Serial.println("已暂停");
+        }
+        else Serial.println("已继续");
+      }
+    else if(s=="K6"){cancel=true;Serial.println("已取消");}
   }
 }
 
+/*
+用movearm函数把笔尖移动到指定坐标(x,y,z)
+内部先做逆解，再把结果写到三个舵机
+*/
 void movearm(float x,float y,float z){
   float a1,a2,a3;
   backanswer(x,y,z,a1,a2,a3);
@@ -171,6 +239,11 @@ void movearm(float x,float y,float z){
   delay(20);
 }
 
+/*
+用drawline函数来画一条直线
+x1,y1为起点 x2,y2为终点
+画的过程支持暂停/继续/取消
+*/
 void drawline(float x1,float y1,float x2,float y2){
   int steps=50;//分50步来画这个线
   for(int i=0;i<=steps&&cancel==false;i++){
@@ -196,8 +269,106 @@ void triangle(float x1,float y1,float x2,float y2,float x3,float y3){
   movearm(x1,y1,outpaper);
 }
 
-//子任务3
+/*
+用curveSegment函数来画一段平滑曲线（Catmull-Rom）
+曲线在 p1 和 p2 之间，p0和p3用来保证曲线的平滑性
+由于三次函数的平滑性较好 可设y=a*x*x*x+b*x*x+c*x+d
+那么为了保证平滑性 需保证在p1处的导函数平行于p0,p2连线
+p2处的导函数平行于p1,p3连线
+据此解出 a,b,c,d
+*/
+void curveSegment(float p0x,float p0y,float p1x,float p1y,float p2x,float p2y,float p3x,float p3y){
+  int steps=40;
+  for(int i=0;i<=steps && cancel==false;i++){
+    while(stop==true && cancel==false){
+      check();
+      delay(10);
+    }
+    check();
+    float t=(float)i/steps;
+    float t2=t*t;
+    float t3=t2*t;
+    float x=0.5*((2*p1x)+(-p0x+p2x)*t+(2*p0x-5*p1x+4*p2x-p3x)*t2+(-p0x+3*p1x-3*p2x+p3x)*t3);
+    float y=0.5*((2*p1y)+(-p0y+p2y)*t+(2*p0y-5*p1y+4*p2y-p3y)*t2+(-p0y+3*p1y-3*p2y+p3y)*t3);
+    movearm(x,y,inpaper);
+  }
+}
 
+/*
+用record函数来记录五点示教的坐标
+按一次记录一个坐标 最多记录五个 
+若按第六次会清空数据，重新开始记录
+*/
+void record(){
+  if(number1<5){
+    foreanswer(bottomAngle,leftAngle,rightAngle,x[number1],y[number1],z[number1]);
+    Serial.println(x[number1]);
+    Serial.println(y[number1]);
+    Serial.println(z[number1]);
+    number1++;
+    Serial.print("已记录第");
+    Serial.print(number1);
+    Serial.println("个点");
+  if(number1==5){
+      Serial.println("已记录满5个点再按一次清空");
+    }
+  }else{
+    //已经满5个点，再点一次就清空，重新开始
+    for(int i=0;i<5;i++){
+      x[i]=0;y[i]=0;z[i]=0;
+    }
+    number1=0;
+    Serial.println("已清空记录，可以重新示教");
+  }
+}
+
+/*
+五点示教--折线版
+fiveline函数调用record函数
+接收其记录的坐标 并将其两两连接
+*/
+void fiveline(){
+  if(number1!=5){
+    Serial.println("点的个数不够");
+    return;
+  }else{
+    stop=false;
+    cancel=false;
+    //移动到正上方
+    movearm(x[0],y[0],outpaper);
+    //依次连线
+    for(int i=0;i<number1-1&&cancel==false;i++){
+      drawline(x[i],y[i],x[i+1],y[i+1]);
+      delay(20);
+    }
+    //画完抬笔
+    movearm(x[number1-1],y[number1-1],outpaper);
+    Serial.println("折线已经画好");
+  }
+}
+
+/*
+五点示教--曲线版
+把5个点用 Catmull-Rom 曲线平滑地连起来（共4段）
+第一段和最后一段分别把首尾点重复一次，保证整条曲线平滑
+*/
+void fivecurve(){
+  if(number1!=5){
+    Serial.println("点的个数不够");
+    return;
+  }
+  stop=false;
+  cancel=false;
+  movearm(x[0],y[0],outpaper);
+  curveSegment(x[0],y[0], x[0],y[0], x[1],y[1], x[2],y[2]);
+  curveSegment(x[0],y[0], x[1],y[1], x[2],y[2], x[3],y[3]);
+  curveSegment(x[1],y[1], x[2],y[2], x[3],y[3], x[4],y[4]);
+  curveSegment(x[2],y[2], x[3],y[3], x[4],y[4], x[4],y[4]);
+  movearm(x[4],y[4],outpaper);
+  Serial.println("曲线已画好");
+}
+
+//=======初始化=========
 void setup() {
   //接引脚
   bottom.attach(bottom_yijiao);
@@ -214,23 +385,31 @@ void setup() {
   claw.write(60);
 }
 
+//=========主循环========
 void loop() {
   // =====录制状态=====
   if(recording){
     pole();
-    //存位置到数组中
-    bottomR[number]=bottomAngle;
-    leftR[number]=leftAngle;
-    rightR[number]=rightAngle;
-    clawR[number]=clawAngle;
-    number++;
-    if(number>=120)number=120;
-    delay(100);
+    //存位置到数组中，先判断数组有没有满，满了就不再写，防止越界
+    if(number<frequency){
+      bottomR[number]=bottomAngle;
+      leftR[number]=leftAngle;
+      rightR[number]=rightAngle;
+      clawR[number]=clawAngle;
+      number++;
+    }
+    else{
+      recording=false;
+      Serial.println("录制空间已满，自动停止");
+    }
+    delay(recordDelay);
   }
-  // ===== 摇杆模式：速度控制（像游戏摇杆，推得越远越快，松手停）=====
-  if(change){
-  pole();
+  // ===== 摇杆模式=====
+  else if(change){
+    pole();
+    delay(20);
   }
+  //======串口模式=======
   if(Serial.available()>0){
     //串口输入存储
     String input=Serial.readString();
@@ -242,17 +421,17 @@ void loop() {
     }else{
       change=false;//切回串口模式
       Serial.println("串口模式");
-    //接收O
+    //接收O-张开
     if(input=="O"){
       moveServo(claw, 30, moveDelay);
       Serial.println("open");
     }
-    //接收S
+    //接收S-关闭
     else if(input=="S"){
       moveServo(claw, 120, moveDelay);
       Serial.println("close");
     }
-    //接收H
+    //接收H-加速
     else if(input=="H"){
       moveDelay-=2;
       if(moveDelay<2){
@@ -261,7 +440,7 @@ void loop() {
       Serial.print("延时=");
       Serial.println(moveDelay);
     }
-    //接收L
+    //接收L-减速
     else if(input=="L"){
       moveDelay+=2;
       if(moveDelay>50){
@@ -316,7 +495,7 @@ void loop() {
         left.write(leftR[i]);
         right.write(rightR[i]);
         claw.write(clawR[i]);
-        delay(100);
+        delay(recordDelay);
       }
       Serial.println("播放完毕");
     }
@@ -327,16 +506,32 @@ void loop() {
     //=======任务五========
     //画直线
     else if(input=="D"){
+      stop=false;
+      cancel=false;
       drawline(10,10,60,60);
       Serial.println("直线已画好");
     }
     //画三角形
     else if(input=="T"){
+      stop=false;
+      cancel=false;
       triangle(10,10,60,10,35,50);
       Serial.println("三角形已画好");
     }
+    //记录五点
+    else if(input=="K7"){
+      record();
+    }
+    //画折线
+    else if(input=="K8"){
+      fiveline();
+    }
+    //画曲线
+    else if(input=="K9"){
+      fivecurve();
+    }
     else{
-    //实现舵机控制
+    //用 b/l/r/c 实现舵机控制
     int b=findangle(input,'b');
     int l=findangle(input,'l');
     int r=findangle(input,'r');
