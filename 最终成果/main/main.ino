@@ -24,10 +24,12 @@ const int left_yijiao=8;
 const int right_yijiao=7;
 const int claw_yijiao=6;
 //任务五数据
-float L1=1;//底座到肩的长度
-float L2=1;//后臂长
-float L3=1;//前臂长
-float L4=1;//夹爪尖到前臂尖长度
+float L1=20;//底座到肩的长度
+float L2=60;//后臂长
+float L3=30;//前臂长
+float L4=40;//夹爪尖到前臂尖长度
+float inpaper=5;//纸面高度
+float outpaper=30;//抬笔时高度
 
 //变量声明
 int moveDelay;//每步移动的延时（越小越快），H/L 调速用
@@ -120,23 +122,32 @@ void backanswer(float x,float y,float z,float &a1,float &a2,float &a3){
 x1,y1--起点坐标
 x2,y2--终点坐标
 */
+void movearm(float x,float y,float z){
+  float a1,a2,a3;
+  backanswer(x,y,z,a1,a2,a3);
+  bottom.write(a1);
+  left.write((int)(180-a2));
+  right.write(a3);
+  delay(20);
+}
 
 void drawline(float x1,float y1,float x2,float y2){
-  float z=1;//纸面高度
   int steps=50;//分50步来画这个线
   for(int i=0;i<=steps;i++){
     //算出当前点的位置
     float x=x1+(x2-x1)*i/steps;
     float y=y1+(y2-y1)*i/steps;
-    //算出逆解
-    float a1,a2,a3;
-    backanswer(x,y,z,a1,a2,a3);
-    //移动舵机
-    bottom.write(a1);
-    left.write((int)(180-a2));  // 左舵机装反，取反
-    right.write(a3);
-    delay(20);
+    movearm(x,y,inpaper);
   }
+}
+
+//绘制三角形
+void triangle(float x1,float y1,float x2,float y2,float x3,float y3){
+  movearm(x1,y1,outpaper);
+  drawline(x1,y1,x2,y2);
+  drawline(x2,y2,x3,y3);
+  drawline(x3,y3,x1,y1);
+  movearm(x1,y1,outpaper);
 }
 
 void setup() {
@@ -250,7 +261,7 @@ void loop() {
       Serial.println("C finish");
     }
 
-    //任务三四个按键
+    //==========任务三==========
     //循环
     else if(input=="K1"){
       cycle++;
@@ -289,6 +300,17 @@ void loop() {
     //回中
     else if(input=="K4"){
       moveTo(90,90,90,60,moveDelay);
+    }
+    //=======任务五========
+    //画直线
+    else if(input=="D"){
+      drawline(10,10,60,60);
+      Serial.println("直线已画好");
+    }
+    //画三角形
+    else if(input=="T"){
+      triangle(10,10,60,10,35,50);
+      Serial.println("三角形已画好");
     }
     else{
     //实现舵机控制
