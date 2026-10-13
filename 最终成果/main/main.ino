@@ -139,9 +139,9 @@ void pole(){
   if(dx4<-5 || dx4>5) clawAngle   += dx4/100;
   // 限制角度在 0~180
   bottomAngle=constrain(bottomAngle,0,180);
-  leftAngle=constrain(leftAngle,0,180);
-  rightAngle=constrain(rightAngle,0,180);
-  clawAngle=constrain(clawAngle,0,180);
+  leftAngle=constrain(leftAngle,0,125);
+  rightAngle=constrain(rightAngle,5,165);
+  clawAngle=constrain(clawAngle,0,100);
   // 写到舵机
   bottom.write(bottomAngle);
   left.write(leftAngle);
@@ -381,7 +381,7 @@ void setup() {
   moveDelay=10;
   bottom.write(90);
   left.write(90);
-  right.write(90);
+  right.write(130);
   claw.write(60);
 }
 
