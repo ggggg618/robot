@@ -382,7 +382,7 @@ void setup() {
   bottom.write(90);
   left.write(90);
   right.write(130);
-  claw.write(60);
+  claw.write(100);
 }
 
 //=========主循环========
@@ -501,7 +501,7 @@ void loop() {
     }
     //回中
     else if(input=="K4"){
-      moveTo(90,90,90,60,moveDelay);
+      moveTo(90,90,130,100,moveDelay);
     }
     //=======任务五========
     //画直线
