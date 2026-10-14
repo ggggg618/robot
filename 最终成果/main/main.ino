@@ -78,7 +78,7 @@ byte rightR[frequency];
 byte clawR[frequency];
 float x[5],y[5],z[5];//用来记录五个点的坐标
 //摇杆控制模式下记录当前舵机角度
-int bottomAngle=90, leftAngle=90, rightAngle=90, clawAngle=60;
+int bottomAngle=90, leftAngle=90, rightAngle=80, clawAngle=100;
 
 
 //=========函数库=========
@@ -118,6 +118,11 @@ void moveServo(Servo &s, int target, int stepDelay) {
       delay(stepDelay);
     }
   }
+  // 同步全局角度变量，防止之后切回摇杆时跳变
+  if (&s == &bottom) bottomAngle = target;
+  else if (&s == &left) leftAngle = target;
+  else if (&s == &right) rightAngle = target;
+  else if (&s == &claw) clawAngle = target;
 }
 
 /*
@@ -200,9 +205,14 @@ void backanswer(float x,float y,float z,float &a1,float &a2,float &a3){
   float d=sqrt(x*x+y*y)-L4;//水平距离
   float h=z-L1;//夹爪到肩的竖直距离
   float D=sqrt(d*d+h*h);//肩到夹爪的直线距离
-  a3=acos((d*d+h*h-L2*L2-L3*L3)/(2*L2*L3))*180.0/PI;//肘(右)关节角
+  //把 acos 的输入夹到 [-1,1]，防止浮点误差或坐标超范围产生 NaN
+  float cosA3=(d*d+h*h-L2*L2-L3*L3)/(2*L2*L3);
+  cosA3=constrain(cosA3,-1.0,1.0);
+  a3=acos(cosA3)*180.0/PI;//肘(右)关节角
   float arph=atan2(h,d);//肩与夹爪连线与水平面夹角
-  float beta=acos((L2*L2+D*D-L3*L3)/(2*L2*D));//肩与夹爪连线和肩与肘连线之间的夹角
+  float cosBeta=(L2*L2+D*D-L3*L3)/(2*L2*D);
+  cosBeta=constrain(cosBeta,-1.0,1.0);
+  float beta=acos(cosBeta);//肩与夹爪连线和肩与肘连线之间的夹角
   a2=(arph-beta)*180.0/PI;//肩（左）的关节角
 }
 
@@ -213,7 +223,7 @@ K5 = 暂停/继续切换，K6 = 取消
 */
 void check(){
   if(Serial.available()>0){
-    String s=Serial.readStringUntil('\n');
+    String s=Serial.readString();
     s.trim();
     if(s=="K5"){
       stop=!stop;
@@ -239,6 +249,9 @@ void movearm(float x,float y,float z){
   bottom.write(a1);
   left.write(a2);
   right.write(a3);
+  bottomAngle=a1;
+  leftAngle=a2;
+  rightAngle=a3;
   delay(60);
 }
 
@@ -438,7 +451,7 @@ void loop() {
   //======串口模式=======
   if(Serial.available()>0){
     //串口输入存储
-    String input=Serial.readStringUntil('\n');
+    String input=Serial.readString();
     input.trim();
     //接收到J切回摇杆模式
     if(input=="J"){
