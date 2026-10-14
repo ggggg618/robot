@@ -49,10 +49,10 @@ const int claw_yijiao=6;    //夹爪
 const int frequency=175;    //用于任务3录制的数组
 const int recordDelay=70;   //录制时每两个点之间的间隔（毫秒）
 //任务五---机械臂数据
-float L1=20;                //底座到肩的长度
+float L1=61.8;                //底座到肩的长度
 float L2=80;                //后臂长
 float L3=80;                //前臂长
-float L4=40;                //夹爪尖到前臂尖长度
+float L4=46;                //夹爪尖到前臂尖长度
 float inpaper=5;            //纸面高度
 float outpaper=40;          //抬笔时高度
 
@@ -223,7 +223,7 @@ K5 = 暂停/继续切换，K6 = 取消
 */
 void check(){
   if(Serial.available()>0){
-    String s=Serial.readString();
+    String s=Serial.readStringUntil('\n');
     s.trim();
     if(s=="K5"){
       stop=!stop;
@@ -451,7 +451,7 @@ void loop() {
   //======串口模式=======
   if(Serial.available()>0){
     //串口输入存储
-    String input=Serial.readString();
+    String input=Serial.readStringUntil('\n');
     input.trim();
     //接收到J切回摇杆模式
     if(input=="J"){
