@@ -46,15 +46,15 @@ const int bottom_yijiao=9;  //底座
 const int left_yijiao=8;    //左边
 const int right_yijiao=7;   //右边
 const int claw_yijiao=6;    //夹爪
-const int frequency=170;    //用于任务3录制的数组
+const int frequency=175;    //用于任务3录制的数组
 const int recordDelay=70;   //录制时每两个点之间的间隔（毫秒）
 //任务五---机械臂数据
 float L1=20;                //底座到肩的长度
-float L2=60;                //后臂长
-float L3=30;                //前臂长
+float L2=80;                //后臂长
+float L3=80;                //前臂长
 float L4=40;                //夹爪尖到前臂尖长度
 float inpaper=5;            //纸面高度
-float outpaper=30;          //抬笔时高度
+float outpaper=40;          //抬笔时高度
 
 
 //========变量声明=======
@@ -91,7 +91,7 @@ int bottomAngle=90, leftAngle=90, rightAngle=90, clawAngle=60;
 int findangle(String s,char label){
   int num=s.indexOf(label);//找到编号的位置
   if(num==-1){
-    return 0;
+    return -1;//没找到返回 -1，表示这个舵机不动
   }
   else return s.substring(++num).toInt();
 }
@@ -165,14 +165,14 @@ void moveTo(int b, int l, int r, int c, int spd) {
 A B C 函数使用逻辑都为调用moveTo函数来完成移动
 */
 void grabA(){
-  moveTo(90,90,90,60,moveDelay);
+  moveTo(90,90,80,100,moveDelay);
 }
 void grabB(){
-  moveTo(90,90,90,60,moveDelay);
+  moveTo(90,90,80,100,moveDelay);
 }
 
 void grabC(){
-  moveTo(90,90,90,60,moveDelay);
+  moveTo(90,90,80,100,moveDelay);
 }
 
 //      ========任务五·运动学=========
@@ -213,16 +213,19 @@ K5 = 暂停/继续切换，K6 = 取消
 */
 void check(){
   if(Serial.available()>0){
-    String s=Serial.readString();
+    String s=Serial.readStringUntil('\n');
     s.trim();
     if(s=="K5"){
       stop=!stop;
       if(stop){
         Serial.println("已暂停");
-        }
-        else Serial.println("已继续");
+      } else {
+        Serial.println("已继续");
       }
-    else if(s=="K6"){cancel=true;Serial.println("已取消");}
+    } else if(s=="K6"){
+      cancel=true;
+      Serial.println("已取消");
+    }
   }
 }
 
@@ -236,7 +239,7 @@ void movearm(float x,float y,float z){
   bottom.write(a1);
   left.write(a2);
   right.write(a3);
-  delay(20);
+  delay(60);
 }
 
 /*
@@ -250,7 +253,7 @@ void drawline(float x1,float y1,float x2,float y2){
     //当处于停止且没取消时反复检查
     while(stop==true&&cancel==false){
       check();
-      delay(10);
+      delay(20);
     }
     check();//防止未进入while循环
     //算出当前点的位置
@@ -282,7 +285,7 @@ void curveSegment(float p0x,float p0y,float p1x,float p1y,float p2x,float p2y,fl
   for(int i=0;i<=steps && cancel==false;i++){
     while(stop==true && cancel==false){
       check();
-      delay(10);
+      delay(20);
     }
     check();
     float t=(float)i/steps;
@@ -292,6 +295,29 @@ void curveSegment(float p0x,float p0y,float p1x,float p1y,float p2x,float p2y,fl
     float y=0.5*((2*p1y)+(-p0y+p2y)*t+(2*p0y-5*p1y+4*p2y-p3y)*t2+(-p0y+3*p1y-3*p2y+p3y)*t3);
     movearm(x,y,inpaper);
   }
+}
+
+/*
+用printPose函数打印当前笔尖坐标和四个舵机角度
+测数据用：把机械臂摇到目标位置后，串口发 P 就能看到坐标和角度
+*/
+void printPose(){
+  float px,py,pz;
+  foreanswer(bottomAngle,leftAngle,rightAngle,px,py,pz);
+  Serial.print("坐标 x=");
+  Serial.print(px);
+  Serial.print(" y=");
+  Serial.print(py);
+  Serial.print(" z=");
+  Serial.println(pz);
+  Serial.print("角度 底座=");
+  Serial.print(bottomAngle);
+  Serial.print(" 肩=");
+  Serial.print(leftAngle);
+  Serial.print(" 肘=");
+  Serial.print(rightAngle);
+  Serial.print(" 夹爪=");
+  Serial.println(clawAngle);
 }
 
 /*
@@ -381,7 +407,7 @@ void setup() {
   moveDelay=10;
   bottom.write(90);
   left.write(90);
-  right.write(130);
+  right.write(80);
   claw.write(100);
 }
 
@@ -412,7 +438,7 @@ void loop() {
   //======串口模式=======
   if(Serial.available()>0){
     //串口输入存储
-    String input=Serial.readString();
+    String input=Serial.readStringUntil('\n');
     input.trim();
     //接收到J切回摇杆模式
     if(input=="J"){
@@ -428,7 +454,7 @@ void loop() {
     }
     //接收S-关闭
     else if(input=="S"){
-      moveServo(claw, 120, moveDelay);
+      moveServo(claw, 100, moveDelay);
       Serial.println("close");
     }
     //接收H-加速
@@ -501,14 +527,14 @@ void loop() {
     }
     //回中
     else if(input=="K4"){
-      moveTo(90,90,130,100,moveDelay);
+      moveTo(90,90,80,100,moveDelay);
     }
     //=======任务五========
     //画直线
     else if(input=="D"){
       stop=false;
       cancel=false;
-      drawline(10,10,60,60);
+      drawline(10,10,-60,-60);
       Serial.println("直线已画好");
     }
     //画三角形
@@ -518,9 +544,17 @@ void loop() {
       triangle(10,10,60,10,35,50);
       Serial.println("三角形已画好");
     }
+    //打印当前坐标和角度（测数据用）
+    else if(input=="P"){
+      printPose();
+      change=true;              //打印完切回摇杆，继续移动
+      Serial.println("摇杆模式");
+    }
     //记录五点
     else if(input=="K7"){
       record();
+      change=true;              //记录完切回摇杆，继续移动笔尖
+      Serial.println("摇杆模式");
     }
     //画折线
     else if(input=="K8"){
@@ -536,10 +570,10 @@ void loop() {
     int l=findangle(input,'l');
     int r=findangle(input,'r');
     int c=findangle(input,'c');
-    moveServo(bottom, b, moveDelay);
-    moveServo(left, l, moveDelay);
-    moveServo(right, r, moveDelay);
-    moveServo(claw, c, moveDelay);
+    if(b!=-1) moveServo(bottom, b, moveDelay);
+    if(l!=-1) moveServo(left, l, moveDelay);
+    if(r!=-1) moveServo(right, r, moveDelay);
+    if(c!=-1) moveServo(claw, c, moveDelay);
     }
     }
   }
