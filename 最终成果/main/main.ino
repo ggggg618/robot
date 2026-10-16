@@ -561,6 +561,21 @@ void fivePointUpAngles(int i,float &b,float &l,float &r){
   r=constrain(r5[i]-10.0,5.0,165.0);
 }
 
+//用记录到的舵机角直接做一段 Catmull-Rom 曲线
+void curveSegmentAngles(int i0,int i1,int i2,int i3){
+  int steps=40;
+  for(int i=0;i<=steps && cancel==false;i++){
+    float t=(float)i/steps;
+    float t2=t*t;
+    float t3=t2*t;
+    float b=0.5*((2*b5[i1])+(-b5[i0]+b5[i2])*t+(2*b5[i0]-5*b5[i1]+4*b5[i2]-b5[i3])*t2+(-b5[i0]+3*b5[i1]-3*b5[i2]+b5[i3])*t3);
+    float l=0.5*((2*l5[i1])+(-l5[i0]+l5[i2])*t+(2*l5[i0]-5*l5[i1]+4*l5[i2]-l5[i3])*t2+(-l5[i0]+3*l5[i1]-3*l5[i2]+l5[i3])*t3);
+    float r=0.5*((2*r5[i1])+(-r5[i0]+r5[i2])*t+(2*r5[i0]-5*r5[i1]+4*r5[i2]-r5[i3])*t2+(-r5[i0]+3*r5[i1]-3*r5[i2]+r5[i3])*t3);
+    movetogether(b,l,r);
+    if(cancel) return;
+  }
+}
+
 /*
 五点示教--折线版
 fiveline函数调用record函数
@@ -614,10 +629,15 @@ void fivecurve(){
   fivePointUpAngles(0,ub,ul,ur);
   moveTo((int)ub,(int)ul,(int)ur,100,moveDelay);       //第一个点抬笔
   moveTo((int)b5[0],(int)l5[0],(int)r5[0],100,moveDelay);//第一个点落笔
-  curveSegment(x[0],y[0],z[0], x[0],y[0],z[0], x[1],y[1],z[1], x[2],y[2],z[2]);
-  curveSegment(x[0],y[0],z[0], x[1],y[1],z[1], x[2],y[2],z[2], x[3],y[3],z[3]);
-  curveSegment(x[1],y[1],z[1], x[2],y[2],z[2], x[3],y[3],z[3], x[4],y[4],z[4]);
-  curveSegment(x[2],y[2],z[2], x[3],y[3],z[3], x[4],y[4],z[4], x[4],y[4],z[4]);
+  if(!cancel) delay(pointpause);
+  curveSegmentAngles(0,0,1,2);
+  if(!cancel) delay(pointpause);
+  curveSegmentAngles(0,1,2,3);
+  if(!cancel) delay(pointpause);
+  curveSegmentAngles(1,2,3,4);
+  if(!cancel) delay(pointpause);
+  curveSegmentAngles(2,3,4,4);
+  if(!cancel) delay(pointpause);
   if(cancel){
     cancel=false;
     moveTo(90,115,80,100,moveDelay);
