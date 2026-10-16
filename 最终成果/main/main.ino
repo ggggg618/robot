@@ -7,8 +7,8 @@
  * 【硬件连接】
  *   舵机引脚：
  *     底座             D9
- *     肩（左臂）        D8
- *     肘（右臂）        D7
+ *     前臂（左臂）        D8
+ *     （右臂）        D7
  *     夹爪             D6
  *   摇杆引脚：
  *     A0  摇杆1 X轴 → 控制底座
@@ -46,15 +46,15 @@ const int bottom_yijiao=9;  //底座
 const int left_yijiao=8;    //左边
 const int right_yijiao=7;   //右边
 const int claw_yijiao=6;    //夹爪
-const int frequency=175;    //用于任务3录制的数组
-const int recordDelay=70;   //录制时每两个点之间的间隔（毫秒）
+const int frequency=230;    //用于任务3录制的数组
+const int recordDelay=55;   //录制时每两个点之间的间隔（毫秒）
 //任务五---机械臂数据
 float L1=61.8;                //底座到肩的长度
 float L2=80;                //后臂长
 float L3=80;                //前臂长
 float L4=46;                //夹爪尖到前臂尖长度
-float inpaper=5;            //纸面高度
-float outpaper=40;          //抬笔时高度
+float inpaper=185.37;            //夹爪尖落笔高度（笔尖贴纸时测得的 z）
+float outpaper=158.80;           //夹爪尖抬笔高度（笔尖抬离纸面）
 
 
 //========变量声明=======
@@ -78,7 +78,7 @@ byte rightR[frequency];
 byte clawR[frequency];
 float x[5],y[5],z[5];//用来记录五个点的坐标
 //摇杆控制模式下记录当前舵机角度
-int bottomAngle=90, leftAngle=90, rightAngle=80, clawAngle=100;
+int bottomAngle=90, leftAngle=115, rightAngle=80, clawAngle=100;
 
 
 //=========函数库=========
@@ -144,7 +144,7 @@ void pole(){
   if(dx4<-5 || dx4>5) clawAngle   += dx4/100;
   // 限制角度在 0~180
   bottomAngle=constrain(bottomAngle,0,180);
-  leftAngle=constrain(leftAngle,0,125);
+  leftAngle=constrain(leftAngle,0,137);
   rightAngle=constrain(rightAngle,5,165);
   clawAngle=constrain(clawAngle,0,100);
   // 写到舵机
@@ -159,10 +159,19 @@ void pole(){
 其中 b-底座 l-左边 r-右边 c-夹爪 spd-延时
 */
 void moveTo(int b, int l, int r, int c, int spd) {
-  moveServo(bottom, b, spd);
-  moveServo(left, l, spd);
-  moveServo(right, r, spd);
-  moveServo(claw, c, spd);
+  int c1=bottom.read(), c2=left.read(), c3=right.read(), c4=claw.read();
+  //四个舵机同时逐度移动：谁的角度差大，就一起分多少步
+  int steps=max(max(abs(b-c1), abs(l-c2)), max(abs(r-c3), abs(c-c4)));
+  if(steps>0){
+    for(int i=1;i<=steps;i++){
+      bottom.write(c1+(b-c1)*i/steps);
+      left.write(c2+(l-c2)*i/steps);
+      right.write(c3+(r-c3)*i/steps);
+      claw.write(c4+(c-c4)*i/steps);
+      delay(spd);
+    }
+  }
+  bottomAngle=b; leftAngle=l; rightAngle=r; clawAngle=c;
 }
 
 /*
@@ -170,14 +179,38 @@ void moveTo(int b, int l, int r, int c, int spd) {
 A B C 函数使用逻辑都为调用moveTo函数来完成移动
 */
 void grabA(){
-  moveTo(90,90,80,100,moveDelay);
+  moveTo(10,115,80,30,moveDelay);
+  moveTo(10,49,156,30,moveDelay);
+  moveTo(10,49,156,100,moveDelay);
+  moveTo(10,115,80,100,moveDelay);
+  moveTo(62,115,80,100,moveDelay);
+  moveTo(62,49,156,100,moveDelay);
+  moveTo(62,49,156,30,moveDelay);
+  moveTo(62,115,80,30,moveDelay);
+  moveTo(90,115,80,100,moveDelay);
 }
 void grabB(){
-  moveTo(90,90,80,100,moveDelay);
+  moveTo(168,137,91,30,moveDelay);
+  moveTo(168,76,103,30,moveDelay);
+  moveTo(168,76,103,100,moveDelay);
+  moveTo(168,137,91,100,moveDelay);
+  moveTo(77,137,91,100,moveDelay);
+  moveTo(77,76,103,100,moveDelay);
+  moveTo(77,76,103,30,moveDelay);
+  moveTo(77,137,91,30,moveDelay);
+  moveTo(90,115,80,100,moveDelay);
 }
 
 void grabC(){
-  moveTo(90,90,80,100,moveDelay);
+  moveTo(2,115,80,30,moveDelay);
+  moveTo(2,23,148,30,moveDelay);
+  moveTo(2,23,148,100,moveDelay);
+  moveTo(2,115,80,100,moveDelay);
+  moveTo(178,115,80,100,moveDelay);
+  moveTo(178,23,148,100,moveDelay);
+  moveTo(178,23,148,30,moveDelay);
+  moveTo(178,115,80,30,moveDelay);
+  moveTo(90,115,80,100,moveDelay);
 }
 
 //      ========任务五·运动学=========
@@ -187,12 +220,24 @@ void grabC(){
 输入三个舵机角度，算出笔尖坐标 x/y/z
 */
 void foreanswer(float a1,float a2,float a3,float &x,float &y,float &z){
-  float a11=a1/180*PI;
-  float a22=a2/180*PI;
-  float a33=a3/180*PI;
-  x=(L2*cos(a22)+L3*cos(a22+a33)+L4)*cos(a11);
-  y=(L2*cos(a22)+L3*cos(a22+a33)+L4)*sin(a11);
-  z=L1+L2*sin(a22)+L3*sin(a22+a33);
+  //二连杆：a1=底座, a2=左舵机(肘), a3=右舵机(肩)
+  //后臂角 j2，前臂相对后臂角 j3
+  float j1=a1;                        //底座关节角（直接对应）
+  float j2=(18.0/17.0)*(a3-165.0);    //后臂角（右=肩，向下为正，负=向上）
+  float j3=0.559*(115.0-a2);          //前臂相对后臂角（左=肘）
+  float a11=j1/180.0*PI;
+  float aa=j2/180.0*PI;
+  float bb=(j2+j3)/180.0*PI;
+  x=(L2*cos(aa)+L3*cos(bb)+L4)*cos(a11);
+  y=(L2*cos(aa)+L3*cos(bb)+L4)*sin(a11);
+  z=L1+L2*sin(aa)+L3*sin(bb);
+}
+
+//浮点角度写舵机，用 writeMicroseconds 提高精度（小于1度也能动）
+void writeServo(Servo &s, float angle){
+  angle=constrain(angle,0.0,180.0);
+  int us=(int)(544.0+angle*1856.0/180.0);
+  s.writeMicroseconds(us);
 }
 
 /*
@@ -201,19 +246,24 @@ void foreanswer(float a1,float a2,float a3,float &x,float &y,float &z){
 */
 
 void backanswer(float x,float y,float z,float &a1,float &a2,float &a3){
-  a1=atan2(y,x)*180/PI;//底座角度
-  float d=sqrt(x*x+y*y)-L4;//水平距离
-  float h=z-L1;//夹爪到肩的竖直距离
-  float D=sqrt(d*d+h*h);//肩到夹爪的直线距离
-  //把 acos 的输入夹到 [-1,1]，防止浮点误差或坐标超范围产生 NaN
-  float cosA3=(d*d+h*h-L2*L2-L3*L3)/(2*L2*L3);
-  cosA3=constrain(cosA3,-1.0,1.0);
-  a3=acos(cosA3)*180.0/PI;//肘(右)关节角
-  float arph=atan2(h,d);//肩与夹爪连线与水平面夹角
+  //二连杆逆解
+  float j1=atan2(y,x)*180.0/PI;//底座关节角
+  float R=sqrt(x*x+y*y);//水平距离
+  float D_h=R-L4;//夹爪到肩的水平投影
+  float h=z-L1;//夹爪到肩的竖直投影
+  float D=sqrt(D_h*D_h+h*h);//肩到夹爪距离
+  float cosJ3=(D*D-L2*L2-L3*L3)/(2*L2*L3);
+  cosJ3=constrain(cosJ3,-1.0,1.0);
+  float j3=acos(cosJ3);//前臂相对后臂角（正，肘朝下折）
+  float gamma=atan2(h,D_h);//合力方向
   float cosBeta=(L2*L2+D*D-L3*L3)/(2*L2*D);
   cosBeta=constrain(cosBeta,-1.0,1.0);
-  float beta=acos(cosBeta);//肩与夹爪连线和肩与肘连线之间的夹角
-  a2=(arph-beta)*180.0/PI;//肩（左）的关节角
+  float beta=acos(cosBeta);
+  float j2=gamma-beta;//后臂角（肘朝上构型）
+  //关节角转舵机角
+  a1=j1;                        //底座舵机角
+  a2=115.0-j3/0.559;            //左舵机角（肘）
+  a3=165.0+j2*17.0/18.0;        //右舵机角（肩）
 }
 
 //     ==========任务五·绘制==========
@@ -246,13 +296,19 @@ void check(){
 void movearm(float x,float y,float z){
   float a1,a2,a3;
   backanswer(x,y,z,a1,a2,a3);
-  bottom.write(a1);
-  left.write(a2);
-  right.write(a3);
+  float c1=bottom.read(), c2=left.read(), c3=right.read();
+  //关节空间插值：舵机角线性，不会经过笛卡尔空间里的不可达点
+  float steps=max(max(fabs(a1-c1),fabs(a2-c2)),fabs(a3-c3));
+  if(steps<1.0) steps=1.0;
+  for(int i=1;i<=(int)steps;i++){
+    writeServo(bottom, c1+(a1-c1)*i/steps);
+    writeServo(left, c2+(a2-c2)*i/steps);
+    writeServo(right, c3+(a3-c3)*i/steps);
+    delay(moveDelay);
+  }
   bottomAngle=a1;
   leftAngle=a2;
   rightAngle=a3;
-  delay(60);
 }
 
 /*
@@ -261,24 +317,36 @@ x1,y1为起点 x2,y2为终点
 画的过程支持暂停/继续/取消
 */
 void drawline(float x1,float y1,float x2,float y2){
-  int steps=50;//分50步来画这个线
+  float dist=sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
+  int steps=(int)(dist/3.0);//每 3mm 一步
+  if(steps<1) steps=1;
+  float a1,a2,a3;
   for(int i=0;i<=steps&&cancel==false;i++){
     //当处于停止且没取消时反复检查
     while(stop==true&&cancel==false){
       check();
-      delay(20);
+      delay(10);
     }
     check();//防止未进入while循环
     //算出当前点的位置
     float x=x1+(x2-x1)*i/steps;
     float y=y1+(y2-y1)*i/steps;
-    movearm(x,y,inpaper);
+    //逆解出目标舵机角，直接写（每步角度变化够大，舵机能响应）
+    backanswer(x,y,inpaper,a1,a2,a3);
+    writeServo(bottom,a1);
+    writeServo(left,a2);
+    writeServo(right,a3);
+    delay(moveDelay);
   }
+  bottomAngle=a1;
+  leftAngle=a2;
+  rightAngle=a3;
 }
 
 //绘制三角形
 void triangle(float x1,float y1,float x2,float y2,float x3,float y3){
   movearm(x1,y1,outpaper);
+  movearm(x1,y1,inpaper);//落笔
   drawline(x1,y1,x2,y2);
   drawline(x2,y2,x3,y3);
   drawline(x3,y3,x1,y1);
@@ -295,10 +363,11 @@ p2处的导函数平行于p1,p3连线
 */
 void curveSegment(float p0x,float p0y,float p1x,float p1y,float p2x,float p2y,float p3x,float p3y){
   int steps=40;
+  float a1,a2,a3;
   for(int i=0;i<=steps && cancel==false;i++){
     while(stop==true && cancel==false){
       check();
-      delay(20);
+      delay(10);
     }
     check();
     float t=(float)i/steps;
@@ -306,8 +375,15 @@ void curveSegment(float p0x,float p0y,float p1x,float p1y,float p2x,float p2y,fl
     float t3=t2*t;
     float x=0.5*((2*p1x)+(-p0x+p2x)*t+(2*p0x-5*p1x+4*p2x-p3x)*t2+(-p0x+3*p1x-3*p2x+p3x)*t3);
     float y=0.5*((2*p1y)+(-p0y+p2y)*t+(2*p0y-5*p1y+4*p2y-p3y)*t2+(-p0y+3*p1y-3*p2y+p3y)*t3);
-    movearm(x,y,inpaper);
+    backanswer(x,y,inpaper,a1,a2,a3);
+    bottom.write(a1);
+    left.write(a2);
+    right.write(a3);
+    delay(moveDelay);
   }
+  bottomAngle=a1;
+  leftAngle=a2;
+  rightAngle=a3;
 }
 
 /*
@@ -326,9 +402,9 @@ void printPose(){
   Serial.print("角度 底座=");
   Serial.print(bottomAngle);
   Serial.print(" 肩=");
-  Serial.print(leftAngle);
-  Serial.print(" 肘=");
   Serial.print(rightAngle);
+  Serial.print(" 肘=");
+  Serial.print(leftAngle);
   Serial.print(" 夹爪=");
   Serial.println(clawAngle);
 }
@@ -375,6 +451,7 @@ void fiveline(){
     cancel=false;
     //移动到正上方
     movearm(x[0],y[0],outpaper);
+    movearm(x[0],y[0],inpaper);//落笔
     //依次连线
     for(int i=0;i<number1-1&&cancel==false;i++){
       drawline(x[i],y[i],x[i+1],y[i+1]);
@@ -399,6 +476,7 @@ void fivecurve(){
   stop=false;
   cancel=false;
   movearm(x[0],y[0],outpaper);
+  movearm(x[0],y[0],inpaper);//落笔
   curveSegment(x[0],y[0], x[0],y[0], x[1],y[1], x[2],y[2]);
   curveSegment(x[0],y[0], x[1],y[1], x[2],y[2], x[3],y[3]);
   curveSegment(x[1],y[1], x[2],y[2], x[3],y[3], x[4],y[4]);
@@ -417,9 +495,9 @@ void setup() {
   //串口初始化
   Serial.begin(9600);
   //速度初始化
-  moveDelay=10;
+  moveDelay=50;
   bottom.write(90);
-  left.write(90);
+  left.write(115);
   right.write(80);
   claw.write(100);
 }
@@ -540,21 +618,24 @@ void loop() {
     }
     //回中
     else if(input=="K4"){
-      moveTo(90,90,80,100,moveDelay);
+      moveTo(90,115,80,100,moveDelay);
     }
     //=======任务五========
     //画直线
     else if(input=="D"){
       stop=false;
       cancel=false;
-      drawline(10,10,-60,-60);
+      movearm(78,78,outpaper);            //先抬笔到起点上方
+      movearm(78,78,inpaper);             //落笔
+      drawline(78,78,95,95);              //竖线（底座角固定45°，R在可达范围）
+      movearm(95,95,outpaper);            //画完抬笔
       Serial.println("直线已画好");
     }
     //画三角形
     else if(input=="T"){
       stop=false;
       cancel=false;
-      triangle(10,10,60,10,35,50);
+      triangle(13.42,12.52,7.76,16.64,35.34,42.12);
       Serial.println("三角形已画好");
     }
     //打印当前坐标和角度（测数据用）
