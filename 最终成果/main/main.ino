@@ -55,6 +55,12 @@ float L3=80;                //前臂长
 float L4=46;                //夹爪尖到前臂尖长度
 float inpaper=-46.25;            //夹爪尖落笔高度（笔尖贴纸时测得的 z）
 float outpaper=-62.0;            //夹爪尖抬笔高度（笔尖抬离纸面）
+const float drawstep=1.0;    //画线时每1mm取一个轨迹点
+const int drawdelay=30;//画线时每个关节细分步的延时
+const float thigh=114.0;    //三角形落笔高度，越小表示笔抬得越高
+const float thighA=120.0;  //A点单独落笔高度，因为A处纸面更低
+const float thighout=70.0;       //三角形抬笔高度，越小表示笔抬得越高
+const int pointpause=200;        //绘制时到达顶点后的统一停顿时间
 
 
 //========变量声明=======
@@ -77,6 +83,7 @@ byte leftR[frequency];
 byte rightR[frequency];
 byte clawR[frequency];
 float x[5],y[5],z[5];//用来记录五个点的坐标
+float b5[5],l5[5],r5[5];//同时记录五个点的三个舵机角
 //摇杆控制模式下记录当前舵机角度
 int bottomAngle=90, leftAngle=115, rightAngle=80, clawAngle=100;
 
@@ -235,7 +242,10 @@ void foreanswer(float a1,float a2,float a3,float &x,float &y,float &z){
 
 //浮点角度写舵机，用 writeMicroseconds 提高精度（小于1度也能动）
 void writeServo(Servo &s, float angle){
-  angle=constrain(angle,0.0,180.0);
+  if(&s==&bottom)      angle=constrain(angle,0.0,180.0);
+  else if(&s==&left)  angle=constrain(angle,0.0,137.0);
+  else if(&s==&right) angle=constrain(angle,5.0,165.0);
+  else                angle=constrain(angle,0.0,180.0);
   int us=(int)(544.0+angle*1856.0/180.0);
   s.writeMicroseconds(us);
 }
@@ -264,6 +274,9 @@ void backanswer(float x,float y,float z,float &a1,float &a2,float &a3){
   a1=j1;                        //底座舵机角
   a2=115.0-j3/0.559;            //左舵机角（肘）
   a3=165.0+j2*17.0/18.0;        //右舵机角（肩）
+  a1=constrain(a1,0.0,180.0);
+  a2=constrain(a2,0.0,137.0);
+  a3=constrain(a3,5.0,165.0);
 }
 
 //     ==========任务五·绘制==========
@@ -315,23 +328,125 @@ void movearm(float x,float y,float z){
 把三个运动舵机同步细分到目标角。
 先算笛卡尔点，再调用这里做关节角平滑，避免每个点之间突然跳舵机。
 */
-void moveJointsSmooth(float b,float l,float r){
+void movetogether(float b,float l,float r){
+  b=constrain(b,0.0,180.0);
+  l=constrain(l,0.0,137.0);
+  r=constrain(r,5.0,165.0);
   float b0=bottomAngle, l0=leftAngle, r0=rightAngle;
   float db=b-b0, dl=l-l0, dr=r-r0;
   int steps=max(1,(int)max(max(fabs(db),fabs(dl)),fabs(dr)));
   for(int i=1;i<=steps;i++){
-    bottom.write((int)(b0+db*i/steps));
-    left.write((int)(l0+dl*i/steps));
-    right.write((int)(r0+dr*i/steps));
-    delay(moveDelay);
+    check();
+    if(cancel) return;
+    while(stop==true && cancel==false){
+      check();
+      delay(10);
+    }
+    writeServo(bottom, b0+db*i/steps);
+    writeServo(left, l0+dl*i/steps);
+    writeServo(right, r0+dr*i/steps);
+    delay(drawdelay);
   }
   bottomAngle=b;
   leftAngle=l;
   rightAngle=r;
 }
 
+// ===== 三角形 =====
+void changepolar(float a,float b,float &r,float &th){
+  r=sqrt(a*a+b*b);
+  if(r==0.0){
+    th=0.0;
+    return;
+  }
+  th=atan2(b,a);
+}
+
+bool tricos(float opp,float adj1,float adj2,float &theta){
+  float den=2.0*adj1*adj2;
+  if(den==0.0) return false;
+  float c=(adj1*adj1+adj2*adj2-opp*opp)/den;
+  if(c>1.0 || c<-1.0) return false;
+  theta=acos(c);
+  return true;
+}
+
+bool tbackanswer(float x,float y,float z,float &a0,float &a1,float &a2){
+  float r,th0;
+  changepolar(y,x,r,th0);
+  r-=46.0;
+
+  float R,angP;
+  changepolar(r,z,R,angP);
+
+  float B,C;
+  if(!tricos(80.0,80.0,R,B)) return false;
+  if(!tricos(R,80.0,80.0,C)) return false;
+
+  a0=th0;
+  a1=angP+B;
+  a2=C+a1-PI;
+  return true;
+}
+
+void tforeanswer(float a0,float a1,float a2,float &x,float &y,float &z){
+  float u=80.0*cos(a1)+80.0*cos(a2)+46.0;
+  float v=80.0*sin(a1)+80.0*sin(a2);
+  y=u*cos(a0);
+  x=u*sin(a0);
+  z=v;
+}
+
+void tanswer(float a0,float a1,float a2,float &b,float &l,float &r){
+  b=constrain(90.0-degrees(a0),0.0,180.0);
+  r=constrain(165.0-degrees(a1)/1.8,5.0,165.0);
+  l=constrain(115.0-degrees(a2)/0.559,0.0,137.0);
+}
+
+void triCurrent(float &x,float &y,float &z){
+  float a0=radians(90.0-bottomAngle);
+  float a1=radians((165.0-rightAngle)*1.8);
+  float a2=radians((115.0-leftAngle)*0.559);
+  tforeanswer(a0,a1,a2,x,y,z);
+}
+
+void tmoveto(float x,float y,float z){
+  float cx,cy,cz;
+  triCurrent(cx,cy,cz);
+  float dx=x-cx, dy=y-cy, dz=z-cz;
+  float dist=sqrt(dx*dx+dy*dy+dz*dz);
+  int steps=max(1,(int)(dist/1.0));
+
+  float a0,a1,a2;
+  for(int i=1;i<=steps;i++){
+    float px=cx+dx*i/steps;
+    float py=cy+dy*i/steps;
+    float pz=cz+dz*i/steps;
+    if(tbackanswer(px,py,pz,a0,a1,a2)){
+      float b,l,r;
+      tanswer(a0,a1,a2,b,l,r);
+      movetogether(b,l,r);
+      if(cancel) return;
+    }
+  }
+}
+
+void drawt(){
+  claw.write(100);
+  tmoveto(78.0,78.0,thighout);     //抬笔到 A 上方
+  tmoveto(78.0,78.0,thighA); //落到 A
+  tmoveto(130.0,78.0,thigh);  //A -> B
+  delay(pointpause);
+  tmoveto(98.0,124.0,thigh);  //B -> C
+  delay(pointpause);
+  tmoveto(78.0,78.0,thighA); //C -> A
+  delay(pointpause);
+  tmoveto(78.0,78.0,thighout);     //抬笔
+  moveTo(90,115,80,100,moveDelay);
+}
+
 //笛卡尔插值移动：x,y,z 线性变化，用于垂直抬笔/落笔，避免斜着拖纸
-void moveCartesian(float x,float y,float z){
+void moveline(float x,float y,float z){
   float cx,cy,cz;
   foreanswer(bottomAngle,leftAngle,rightAngle,cx,cy,cz);
   float dist=sqrt((x-cx)*(x-cx)+(y-cy)*(y-cy)+(z-cz)*(z-cz));
@@ -343,10 +458,8 @@ void moveCartesian(float x,float y,float z){
     float my=cy+(y-cy)*i/steps;
     float mz=cz+(z-cz)*i/steps;
     backanswer(mx,my,mz,a1,a2,a3);
-    writeServo(bottom,a1);
-    writeServo(left,a2);
-    writeServo(right,a3);
-    delay(moveDelay);
+    movetogether(a1,a2,a3);
+    if(cancel) return;
   }
   bottomAngle=a1;
   leftAngle=a2;
@@ -360,7 +473,7 @@ x1,y1为起点 x2,y2为终点
 */
 void drawline(float x1,float y1,float z1,float x2,float y2,float z2){
   float dist=sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)+(z2-z1)*(z2-z1));
-  int steps=(int)(dist/5.0);//每 5mm 一步
+  int steps=(int)(dist/drawstep);//每 1mm 一步
   if(steps<1) steps=1;
   float a1,a2,a3;
   for(int i=0;i<=steps&&cancel==false;i++){
@@ -376,7 +489,7 @@ void drawline(float x1,float y1,float z1,float x2,float y2,float z2){
     float z=z1+(z2-z1)*i/steps;
     //逆解出目标舵机角，再用关节平滑插值写舵机
     backanswer(x,y,z,a1,a2,a3);
-    moveJointsSmooth(a1,a2,a3);
+    movetogether(a1,a2,a3);
   }
   bottomAngle=a1;
   leftAngle=a2;
@@ -401,7 +514,7 @@ void triangle(float x1,float y1,float x2,float y2,float x3,float y3){
 p2处的导函数平行于p1,p3连线
 据此解出 a,b,c,d
 */
-void curveSegment(float p0x,float p0y,float p1x,float p1y,float p2x,float p2y,float p3x,float p3y){
+void curveSegment(float p0x,float p0y,float p0z,float p1x,float p1y,float p1z,float p2x,float p2y,float p2z,float p3x,float p3y,float p3z){
   int steps=40;
   float a1,a2,a3;
   for(int i=0;i<=steps && cancel==false;i++){
@@ -415,11 +528,10 @@ void curveSegment(float p0x,float p0y,float p1x,float p1y,float p2x,float p2y,fl
     float t3=t2*t;
     float x=0.5*((2*p1x)+(-p0x+p2x)*t+(2*p0x-5*p1x+4*p2x-p3x)*t2+(-p0x+3*p1x-3*p2x+p3x)*t3);
     float y=0.5*((2*p1y)+(-p0y+p2y)*t+(2*p0y-5*p1y+4*p2y-p3y)*t2+(-p0y+3*p1y-3*p2y+p3y)*t3);
-    backanswer(x,y,inpaper,a1,a2,a3);
-    bottom.write(a1);
-    left.write(a2);
-    right.write(a3);
-    delay(moveDelay);
+    float z=0.5*((2*p1z)+(-p0z+p2z)*t+(2*p0z-5*p1z+4*p2z-p3z)*t2+(-p0z+3*p1z-3*p2z+p3z)*t3);
+    backanswer(x,y,z,a1,a2,a3);
+    movetogether(a1,a2,a3);
+    if(cancel) return;
   }
   bottomAngle=a1;
   leftAngle=a2;
@@ -457,6 +569,9 @@ void printPose(){
 void record(){
   if(number1<5){
     foreanswer(bottomAngle,leftAngle,rightAngle,x[number1],y[number1],z[number1]);
+    b5[number1]=bottomAngle;
+    l5[number1]=leftAngle;
+    r5[number1]=rightAngle;
     Serial.println(x[number1]);
     Serial.println(y[number1]);
     Serial.println(z[number1]);
@@ -471,10 +586,21 @@ void record(){
     //已经满5个点，再点一次就清空，重新开始
     for(int i=0;i<5;i++){
       x[i]=0;y[i]=0;z[i]=0;
+      b5[i]=0;l5[i]=0;r5[i]=0;
     }
     number1=0;
     Serial.println("已清空记录，可以重新示教");
   }
+}
+
+/*
+根据某个示教点的三个舵机角，算出它的抬笔舵机角。
+抬笔时肘加一点、肩收一点，让笔先抬起来并往回收，不再伸到最远。
+*/
+void fivePointUpAngles(int i,float &b,float &l,float &r){
+  b=b5[i];
+  l=constrain(l5[i]+20.0,0.0,137.0);
+  r=constrain(r5[i]-10.0,5.0,165.0);
 }
 
 /*
@@ -489,17 +615,28 @@ void fiveline(){
   }else{
     stop=false;
     cancel=false;
-    //移动到正上方
-    movearm(x[0],y[0],outpaper);
-    movearm(x[0],y[0],inpaper);//落笔
-    //依次连线
+    float ub,ul,ur;
+    fivePointUpAngles(0,ub,ul,ur);
+    moveTo((int)ub,(int)ul,(int)ur,100,moveDelay);       //第一个点抬笔
+    moveTo((int)b5[0],(int)l5[0],(int)r5[0],100,moveDelay);//第一个点落笔
+    delay(pointpause);
+    //直接用记录到的舵机角依次连线，不再做逆解
     for(int i=0;i<number1-1&&cancel==false;i++){
-      drawline(x[i],y[i],inpaper,x[i+1],y[i+1],inpaper);
-      delay(20);
+      movetogether(b5[i+1],l5[i+1],r5[i+1]);
+      delay(pointpause);
     }
-    //画完抬笔
-    movearm(x[number1-1],y[number1-1],outpaper);
-    Serial.println("折线已经画好");
+    if(cancel){
+      cancel=false;
+      moveTo(90,115,80,100,moveDelay);
+      Serial.println("已取消并回中");
+    }else{
+      //画完先垂直抬笔，再回中
+      int last=number1-1;
+      fivePointUpAngles(last,ub,ul,ur);
+      moveTo((int)ub,(int)ul,(int)ur,100,moveDelay);
+      moveTo(90,115,80,100,moveDelay);
+      Serial.println("折线已经画好");
+    }
   }
 }
 
@@ -515,14 +652,24 @@ void fivecurve(){
   }
   stop=false;
   cancel=false;
-  movearm(x[0],y[0],outpaper);
-  movearm(x[0],y[0],inpaper);//落笔
-  curveSegment(x[0],y[0], x[0],y[0], x[1],y[1], x[2],y[2]);
-  curveSegment(x[0],y[0], x[1],y[1], x[2],y[2], x[3],y[3]);
-  curveSegment(x[1],y[1], x[2],y[2], x[3],y[3], x[4],y[4]);
-  curveSegment(x[2],y[2], x[3],y[3], x[4],y[4], x[4],y[4]);
-  movearm(x[4],y[4],outpaper);
-  Serial.println("曲线已画好");
+  float ub,ul,ur;
+  fivePointUpAngles(0,ub,ul,ur);
+  moveTo((int)ub,(int)ul,(int)ur,100,moveDelay);       //第一个点抬笔
+  moveTo((int)b5[0],(int)l5[0],(int)r5[0],100,moveDelay);//第一个点落笔
+  curveSegment(x[0],y[0],z[0], x[0],y[0],z[0], x[1],y[1],z[1], x[2],y[2],z[2]);
+  curveSegment(x[0],y[0],z[0], x[1],y[1],z[1], x[2],y[2],z[2], x[3],y[3],z[3]);
+  curveSegment(x[1],y[1],z[1], x[2],y[2],z[2], x[3],y[3],z[3], x[4],y[4],z[4]);
+  curveSegment(x[2],y[2],z[2], x[3],y[3],z[3], x[4],y[4],z[4], x[4],y[4],z[4]);
+  if(cancel){
+    cancel=false;
+    moveTo(90,115,80,100,moveDelay);
+    Serial.println("已取消并回中");
+  }else{
+    fivePointUpAngles(4,ub,ul,ur);
+    moveTo((int)ub,(int)ul,(int)ur,100,moveDelay);
+    moveTo(90,115,80,100,moveDelay);
+    Serial.println("曲线已画好");
+  }
 }
 
 //=======初始化=========
@@ -666,22 +813,34 @@ void loop() {
       stop=false;
       cancel=false;
       int b1=90, l1=55, r1=118;             //竖线起点舵机角
-      int l1Up=42;                          //起点抬笔时只收一点肘，不让臂被拉直
-      int b2=90, l2=35, r2=85;              //竖线终点舵机角
-      int l2Up=20;                          //终点抬笔角
-      moveTo(b1,l1Up,r1,100,moveDelay);     //先到起点抬笔姿势
+      int l1Up=75, r1Up=120;                //起点抬笔：z=-31.5，比纸面高约10mm
+      int b2=90;                            //竖线终点底座角也保持90
+      int l2Up=79, r2Up=95;                 //终点抬笔：z=-79.9，比纸面高约11mm
+      moveTo(b1,l1Up,r1Up,100,moveDelay);   //先到起点抬笔姿势
       moveTo(b1,l1,r1,100,moveDelay);       //落到竖线起点
       drawline(0.0,174.49,-21.62,0.0,115.22,-68.93); //底座固定90°，只靠肩肘画竖线
-      moveTo(b2,l2Up,r2,100,moveDelay);     //终点抬笔
-      moveTo(90,115,80,100,moveDelay);      //抬笔后再回中
-      Serial.println("直线已画好");
+      if(cancel){
+        cancel=false;
+        moveTo(90,115,80,100,moveDelay);    //取消后回中
+        Serial.println("已取消并回中");
+      }else{
+        moveTo(b2,l2Up,r2Up,100,moveDelay); //终点先往上抬笔
+        moveTo(90,115,80,100,moveDelay);    //抬笔后再回中
+        Serial.println("直线已画好");
+      }
     }
     //画三角形
     else if(input=="T"){
       stop=false;
       cancel=false;
-      triangle(13.42,12.52,7.76,16.64,35.34,42.12);
-      Serial.println("三角形已画好");
+      drawt();
+      if(cancel){
+        cancel=false;
+        moveTo(90,115,80,100,moveDelay);    //取消后回中
+        Serial.println("已取消并回中");
+      }else{
+        Serial.println("三角形已画好");
+      }
     }
     //打印当前坐标和角度（测数据用）
     else if(input=="P"){
