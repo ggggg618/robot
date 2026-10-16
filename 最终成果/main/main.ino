@@ -7,8 +7,8 @@
  * 【硬件连接】
  *   舵机引脚：
  *     底座             D9
- *     前臂（左臂）        D8
- *     （右臂）        D7
+ *     前臂（左臂）      D8
+ *     后臂（右臂）      D7
  *     夹爪             D6
  *   摇杆引脚：
  *     A0  摇杆1 X轴 → 控制底座
@@ -46,15 +46,15 @@ const int bottom_yijiao=9;  //底座
 const int left_yijiao=8;    //左边
 const int right_yijiao=7;   //右边
 const int claw_yijiao=6;    //夹爪
-const int frequency=230;    //用于任务3录制的数组
-const int recordDelay=55;   //录制时每两个点之间的间隔（毫秒）
+const int frequency=210;    //用于任务3录制的数组
+const int recordDelay=60;   //录制时每两个点之间的间隔（毫秒）
 //任务五---机械臂数据
 float L1=61.8;                //底座到肩的长度
 float L2=80;                //后臂长
 float L3=80;                //前臂长
 float L4=46;                //夹爪尖到前臂尖长度
-float inpaper=185.37;            //夹爪尖落笔高度（笔尖贴纸时测得的 z）
-float outpaper=158.80;           //夹爪尖抬笔高度（笔尖抬离纸面）
+float inpaper=-46.25;            //夹爪尖落笔高度（笔尖贴纸时测得的 z）
+float outpaper=-62.0;            //夹爪尖抬笔高度（笔尖抬离纸面）
 
 
 //========变量声明=======
@@ -312,13 +312,55 @@ void movearm(float x,float y,float z){
 }
 
 /*
+把三个运动舵机同步细分到目标角。
+先算笛卡尔点，再调用这里做关节角平滑，避免每个点之间突然跳舵机。
+*/
+void moveJointsSmooth(float b,float l,float r){
+  float b0=bottomAngle, l0=leftAngle, r0=rightAngle;
+  float db=b-b0, dl=l-l0, dr=r-r0;
+  int steps=max(1,(int)max(max(fabs(db),fabs(dl)),fabs(dr)));
+  for(int i=1;i<=steps;i++){
+    bottom.write((int)(b0+db*i/steps));
+    left.write((int)(l0+dl*i/steps));
+    right.write((int)(r0+dr*i/steps));
+    delay(moveDelay);
+  }
+  bottomAngle=b;
+  leftAngle=l;
+  rightAngle=r;
+}
+
+//笛卡尔插值移动：x,y,z 线性变化，用于垂直抬笔/落笔，避免斜着拖纸
+void moveCartesian(float x,float y,float z){
+  float cx,cy,cz;
+  foreanswer(bottomAngle,leftAngle,rightAngle,cx,cy,cz);
+  float dist=sqrt((x-cx)*(x-cx)+(y-cy)*(y-cy)+(z-cz)*(z-cz));
+  int steps=(int)(dist/1.0);
+  if(steps<1) steps=1;
+  float a1,a2,a3;
+  for(int i=1;i<=steps;i++){
+    float mx=cx+(x-cx)*i/steps;
+    float my=cy+(y-cy)*i/steps;
+    float mz=cz+(z-cz)*i/steps;
+    backanswer(mx,my,mz,a1,a2,a3);
+    writeServo(bottom,a1);
+    writeServo(left,a2);
+    writeServo(right,a3);
+    delay(moveDelay);
+  }
+  bottomAngle=a1;
+  leftAngle=a2;
+  rightAngle=a3;
+}
+
+/*
 用drawline函数来画一条直线
 x1,y1为起点 x2,y2为终点
 画的过程支持暂停/继续/取消
 */
-void drawline(float x1,float y1,float x2,float y2){
-  float dist=sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
-  int steps=(int)(dist/3.0);//每 3mm 一步
+void drawline(float x1,float y1,float z1,float x2,float y2,float z2){
+  float dist=sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1)+(z2-z1)*(z2-z1));
+  int steps=(int)(dist/5.0);//每 5mm 一步
   if(steps<1) steps=1;
   float a1,a2,a3;
   for(int i=0;i<=steps&&cancel==false;i++){
@@ -331,12 +373,10 @@ void drawline(float x1,float y1,float x2,float y2){
     //算出当前点的位置
     float x=x1+(x2-x1)*i/steps;
     float y=y1+(y2-y1)*i/steps;
-    //逆解出目标舵机角，直接写（每步角度变化够大，舵机能响应）
-    backanswer(x,y,inpaper,a1,a2,a3);
-    writeServo(bottom,a1);
-    writeServo(left,a2);
-    writeServo(right,a3);
-    delay(moveDelay);
+    float z=z1+(z2-z1)*i/steps;
+    //逆解出目标舵机角，再用关节平滑插值写舵机
+    backanswer(x,y,z,a1,a2,a3);
+    moveJointsSmooth(a1,a2,a3);
   }
   bottomAngle=a1;
   leftAngle=a2;
@@ -347,9 +387,9 @@ void drawline(float x1,float y1,float x2,float y2){
 void triangle(float x1,float y1,float x2,float y2,float x3,float y3){
   movearm(x1,y1,outpaper);
   movearm(x1,y1,inpaper);//落笔
-  drawline(x1,y1,x2,y2);
-  drawline(x2,y2,x3,y3);
-  drawline(x3,y3,x1,y1);
+  drawline(x1,y1,inpaper,x2,y2,inpaper);
+  drawline(x2,y2,inpaper,x3,y3,inpaper);
+  drawline(x3,y3,inpaper,x1,y1,inpaper);
   movearm(x1,y1,outpaper);
 }
 
@@ -454,7 +494,7 @@ void fiveline(){
     movearm(x[0],y[0],inpaper);//落笔
     //依次连线
     for(int i=0;i<number1-1&&cancel==false;i++){
-      drawline(x[i],y[i],x[i+1],y[i+1]);
+      drawline(x[i],y[i],inpaper,x[i+1],y[i+1],inpaper);
       delay(20);
     }
     //画完抬笔
@@ -625,10 +665,15 @@ void loop() {
     else if(input=="D"){
       stop=false;
       cancel=false;
-      movearm(78,78,outpaper);            //先抬笔到起点上方
-      movearm(78,78,inpaper);             //落笔
-      drawline(78,78,95,95);              //竖线（底座角固定45°，R在可达范围）
-      movearm(95,95,outpaper);            //画完抬笔
+      int b1=90, l1=55, r1=118;             //竖线起点舵机角
+      int l1Up=42;                          //起点抬笔时只收一点肘，不让臂被拉直
+      int b2=90, l2=35, r2=85;              //竖线终点舵机角
+      int l2Up=20;                          //终点抬笔角
+      moveTo(b1,l1Up,r1,100,moveDelay);     //先到起点抬笔姿势
+      moveTo(b1,l1,r1,100,moveDelay);       //落到竖线起点
+      drawline(0.0,174.49,-21.62,0.0,115.22,-68.93); //底座固定90°，只靠肩肘画竖线
+      moveTo(b2,l2Up,r2,100,moveDelay);     //终点抬笔
+      moveTo(90,115,80,100,moveDelay);      //抬笔后再回中
       Serial.println("直线已画好");
     }
     //画三角形
