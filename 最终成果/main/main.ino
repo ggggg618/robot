@@ -164,15 +164,22 @@ void pole(){
 */
 void moveTo(int b, int l, int r, int c, int spd) {
   int c1=bottom.read(), c2=left.read(), c3=right.read(), c4=claw.read();
-  //四个舵机同时逐度移动：谁的角度差大，就一起分多少步
-  int steps=max(max(abs(b-c1), abs(l-c2)), max(abs(r-c3), abs(c-c4)));
+  //四个舵机同时细分移动，减少卡顿
+  float maxDelta=max(max(fabs(b-c1), fabs(l-c2)), max(fabs(r-c3), fabs(c-c4)));
+  int steps=max(1,(int)(maxDelta*2.0));
   if(steps>0){
     for(int i=1;i<=steps;i++){
-      bottom.write(c1+(b-c1)*i/steps);
-      left.write(c2+(l-c2)*i/steps);
-      right.write(c3+(r-c3)*i/steps);
-      claw.write(c4+(c-c4)*i/steps);
-      delay(spd);
+      check();
+      if(cancel) return;
+      while(stop==true && cancel==false){
+        check();
+        delay(10);
+      }
+      writeServo(bottom, c1+(b-c1)*i/steps);
+      writeServo(left, c2+(l-c2)*i/steps);
+      writeServo(right, c3+(r-c3)*i/steps);
+      writeServo(claw, c4+(c-c4)*i/steps);
+      delay(max(1,spd/2));
     }
   }
   bottomAngle=b; leftAngle=l; rightAngle=r; clawAngle=c;
@@ -361,7 +368,19 @@ void triangleFixed(){
   int upB=45, upL=126, upR=109;
 
   moveTo(upB,upL,upR,100,moveDelay);
+  if(cancel){
+    cancel=false;
+    moveTo(90,115,80,100,moveDelay);
+    Serial.println("已取消并回中");
+    return;
+  }
   moveTo(triB[0],triL[0],triR[0],100,moveDelay);
+  if(cancel){
+    cancel=false;
+    moveTo(90,115,80,100,moveDelay);
+    Serial.println("已取消并回中");
+    return;
+  }
   delay(pointpause);
 
   for(int i=1;i<3&&cancel==false;i++){
@@ -620,6 +639,7 @@ void setup() {
   claw.attach(claw_yijiao);
   //串口初始化
   Serial.begin(9600);
+  Serial.setTimeout(50);
   //速度初始化
   moveDelay=50;
   bottom.write(90);
@@ -734,11 +754,7 @@ void loop() {
     else if(input=="K3"){
       Serial.println("开始播放");
       for(int i=0;i<number;i++){
-        bottom.write(bottomR[i]);
-        left.write(leftR[i]);
-        right.write(rightR[i]);
-        claw.write(clawR[i]);
-        delay(recordDelay);
+        moveTo(bottomR[i],leftR[i],rightR[i],clawR[i],recordDelay);
       }
       Serial.println("播放完毕");
     }
