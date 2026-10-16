@@ -57,9 +57,6 @@ float inpaper=-46.25;            //夹爪尖落笔高度（笔尖贴纸时测得
 float outpaper=-62.0;            //夹爪尖抬笔高度（笔尖抬离纸面）
 const float drawstep=1.0;    //画线时每1mm取一个轨迹点
 const int drawdelay=30;//画线时每个关节细分步的延时
-const float thigh=114.0;    //三角形落笔高度，越小表示笔抬得越高
-const float thighA=120.0;  //A点单独落笔高度，因为A处纸面更低
-const float thighout=70.0;       //三角形抬笔高度，越小表示笔抬得越高
 const int pointpause=200;        //绘制时到达顶点后的统一停顿时间
 
 
@@ -352,97 +349,39 @@ void movetogether(float b,float l,float r){
   rightAngle=r;
 }
 
-// ===== 三角形 =====
-void changepolar(float a,float b,float &r,float &th){
-  r=sqrt(a*a+b*b);
-  if(r==0.0){
-    th=0.0;
-    return;
-  }
-  th=atan2(b,a);
-}
-
-bool tricos(float opp,float adj1,float adj2,float &theta){
-  float den=2.0*adj1*adj2;
-  if(den==0.0) return false;
-  float c=(adj1*adj1+adj2*adj2-opp*opp)/den;
-  if(c>1.0 || c<-1.0) return false;
-  theta=acos(c);
-  return true;
-}
-
-bool tbackanswer(float x,float y,float z,float &a0,float &a1,float &a2){
-  float r,th0;
-  changepolar(y,x,r,th0);
-  r-=46.0;
-
-  float R,angP;
-  changepolar(r,z,R,angP);
-
-  float B,C;
-  if(!tricos(80.0,80.0,R,B)) return false;
-  if(!tricos(R,80.0,80.0,C)) return false;
-
-  a0=th0;
-  a1=angP+B;
-  a2=C+a1-PI;
-  return true;
-}
-
-void tforeanswer(float a0,float a1,float a2,float &x,float &y,float &z){
-  float u=80.0*cos(a1)+80.0*cos(a2)+46.0;
-  float v=80.0*sin(a1)+80.0*sin(a2);
-  y=u*cos(a0);
-  x=u*sin(a0);
-  z=v;
-}
-
-void tanswer(float a0,float a1,float a2,float &b,float &l,float &r){
-  b=constrain(90.0-degrees(a0),0.0,180.0);
-  r=constrain(165.0-degrees(a1)/1.8,5.0,165.0);
-  l=constrain(115.0-degrees(a2)/0.559,0.0,137.0);
-}
-
-void triCurrent(float &x,float &y,float &z){
-  float a0=radians(90.0-bottomAngle);
-  float a1=radians((165.0-rightAngle)*1.8);
-  float a2=radians((115.0-leftAngle)*0.559);
-  tforeanswer(a0,a1,a2,x,y,z);
-}
-
-void tmoveto(float x,float y,float z){
-  float cx,cy,cz;
-  triCurrent(cx,cy,cz);
-  float dx=x-cx, dy=y-cy, dz=z-cz;
-  float dist=sqrt(dx*dx+dy*dy+dz*dz);
-  int steps=max(1,(int)(dist/1.0));
-
-  float a0,a1,a2;
-  for(int i=1;i<=steps;i++){
-    float px=cx+dx*i/steps;
-    float py=cy+dy*i/steps;
-    float pz=cz+dz*i/steps;
-    if(tbackanswer(px,py,pz,a0,a1,a2)){
-      float b,l,r;
-      tanswer(a0,a1,a2,b,l,r);
-      movetogether(b,l,r);
-      if(cancel) return;
-    }
-  }
-}
-
-void drawt(){
+//用三组固定舵机角直接画三角形，不走逆解
+void triangleFixed(){
+  stop=false;
+  cancel=false;
   claw.write(100);
-  tmoveto(78.0,78.0,thighout);     //抬笔到 A 上方
-  tmoveto(78.0,78.0,thighA); //落到 A
-  tmoveto(130.0,78.0,thigh);  //A -> B
+
+  int triB[3]={45,31,52};
+  int triL[3]={36,64,55};
+  int triR[3]={122,130,134};
+  int upB=45, upL=126, upR=109;
+
+  moveTo(upB,upL,upR,100,moveDelay);
+  moveTo(triB[0],triL[0],triR[0],100,moveDelay);
   delay(pointpause);
-  tmoveto(98.0,124.0,thigh);  //B -> C
-  delay(pointpause);
-  tmoveto(78.0,78.0,thighA); //C -> A
-  delay(pointpause);
-  tmoveto(78.0,78.0,thighout);     //抬笔
-  moveTo(90,115,80,100,moveDelay);
+
+  for(int i=1;i<3&&cancel==false;i++){
+    movetogether(triB[i],triL[i],triR[i]);
+    if(!cancel) delay(pointpause);
+  }
+  if(!cancel){
+    movetogether(triB[0],triL[0],triR[0]);
+    delay(pointpause);
+  }
+
+  if(cancel){
+    cancel=false;
+    moveTo(90,115,80,100,moveDelay);
+    Serial.println("已取消并回中");
+  }else{
+    moveTo(upB,upL,upR,100,moveDelay);
+    moveTo(90,115,80,100,moveDelay);
+    Serial.println("三角形已画好");
+  }
 }
 
 //笛卡尔插值移动：x,y,z 线性变化，用于垂直抬笔/落笔，避免斜着拖纸
@@ -833,14 +772,7 @@ void loop() {
     else if(input=="T"){
       stop=false;
       cancel=false;
-      drawt();
-      if(cancel){
-        cancel=false;
-        moveTo(90,115,80,100,moveDelay);    //取消后回中
-        Serial.println("已取消并回中");
-      }else{
-        Serial.println("三角形已画好");
-      }
+      triangleFixed();
     }
     //打印当前坐标和角度（测数据用）
     else if(input=="P"){
