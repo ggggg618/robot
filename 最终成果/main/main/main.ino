@@ -10,10 +10,10 @@
  *     后臂（右臂）      D7
  *     夹爪             D6
  *   摇杆引脚：
- *     A0  摇杆1 X轴 → 控制底座
- *     A1  摇杆2 Y轴 → 控制夹爪
- *     A2  摇杆2 X轴 → 控制肘
- *     A3  摇杆1 Y轴 → 控制肩
+ *     A0  摇杆1 X轴 -> 控制底座
+ *     A1  摇杆2 Y轴 -> 控制夹爪
+ *     A2  摇杆2 X轴 -> 控制肘
+ *     A3  摇杆1 Y轴 -> 控制肩
  *
  * 【串口指令一览】
  *   基础控制
@@ -52,7 +52,7 @@ const float L3=80.0;            //前臂长
 const float L4=46.0;            //夹爪尖到前臂尖长度
 
 // 绘图参数
-const float DRAW_STEP_MM=1.0;   //画线时每1mm取一个轨迹点
+const float drawstep=0.5;   //画线时每0.5mm取一个轨迹点，画得更细腻
 const int JOINT_DELAY_MS=15;    //绘图时关节细分步的延时
 const float PEN_LIFT_MM=6.0;    //抬笔高度
 const int POINT_PAUSE_MS=150;   //绘制时到达顶点后的统一停顿时间
@@ -73,7 +73,7 @@ bool cancel=false;       //用来确认是否取消绘制任务
 // ========== 从 main 合并的功能变量 ==========
 const int frequency=150;          //录制数组容量，降低内存占用
 const int recordDelay=75;         //录制采样间隔
-int moveDelay=50;                 //摇杆/手动移动速度
+int moveDelay=20;                 //摇杆/手动移动速度
 int cycle=0;                      //循环夹取计数
 int number=0;                     //录制动作数量
 int number1=0;                    //五点示教已记录数量
@@ -82,10 +82,10 @@ bool change=false;                //上电后先等待串口，不自动进入�
 bool recording=false;             //是否正在录制动作
 
 //数组变量声明（用来处理录制和播放）
-byte baseR[frequency];
-byte elbowR[frequency];
-byte shoulderR[frequency];
-byte gripperR[frequency];
+byte bottomR[frequency];
+byte leftR[frequency];
+byte rightR[frequency];
+byte clawR[frequency];
 float x[5],y[5],z[5];             //用来记录五个点的坐标
 float b5[5],l5[5],r5[5];          //同时记录五个点的三个舵机角
 
@@ -220,7 +220,7 @@ bool movearm(float x,float y,float z){
 //笛卡尔插值移动：x,y,z 线性变化，用于画线时保证轨迹平滑
 void moveline(float x,float y,float z){
   float dist=sqrt((x-currentX)*(x-currentX)+(y-currentY)*(y-currentY)+(z-currentZ)*(z-currentZ));
-  int steps=max(1,(int)(dist/DRAW_STEP_MM));
+  int steps=max(1,(int)(dist/drawstep));
   float b,l,r;
 
   for(int i=1;i<=steps;i++){
@@ -418,6 +418,33 @@ void moveTo(int b,int l,int r,int c,int spd){
     writeServo(right,c3+(r-c3)*t);
     claw.write((int)(c4+(c-c4)*t));
     delay(max(1,spd/2));
+  }
+
+  bottomAngle=b;
+  leftAngle=l;
+  rightAngle=r;
+  clawAngle=c;
+}
+
+//按固定时长播放一帧录制动作，避免角度差大时忽快忽慢
+void playFrame(int b,int l,int r,int c,int durationMs){
+  int c1=(int)bottomAngle, c2=(int)leftAngle, c3=(int)rightAngle, c4=clawAngle;
+  int stepMs=15;
+  int steps=max(1,durationMs/stepMs);
+
+  for(int i=1;i<=steps;i++){
+    float t=(float)i/steps;
+    check();
+    if(cancel) return;
+    while(stop && !cancel){
+      check();
+      delay(10);
+    }
+    writeServo(bottom,c1+(b-c1)*t);
+    writeServo(left,c2+(l-c2)*t);
+    writeServo(right,c3+(r-c3)*t);
+    claw.write((int)(c4+(c-c4)*t));
+    delay(stepMs);
   }
 
   bottomAngle=b;
@@ -651,10 +678,10 @@ void loop(){
     pole();
     //存位置到数组中，先判断数组有没有满，满了就不再写，防止越界
     if(number<frequency){
-      baseR[number]=(byte)bottomAngle;
-      elbowR[number]=(byte)leftAngle;
-      shoulderR[number]=(byte)rightAngle;
-      gripperR[number]=(byte)clawAngle;
+      bottomR[number]=(byte)bottomAngle;
+      leftR[number]=(byte)leftAngle;
+      rightR[number]=(byte)rightAngle;
+      clawR[number]=(byte)clawAngle;
       number++;
     }else{
       recording=false;
@@ -730,9 +757,11 @@ void loop(){
         }
       //播放录制的动作
       }else if(cmd=="K3"){
+        stop=false;
+        cancel=false;
         Serial.println("开始播放");
-        for(int i=0;i<number;i++){
-          moveTo(baseR[i],elbowR[i],shoulderR[i],gripperR[i],recordDelay);
+        for(int i=0;i<number && !cancel;i++){
+          playFrame(bottomR[i],leftR[i],rightR[i],clawR[i],recordDelay);
         }
         Serial.println("播放完毕");
       //回中
