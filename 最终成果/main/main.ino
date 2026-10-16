@@ -744,6 +744,7 @@ void loop() {
     }
     //回中
     else if(input=="K4"){
+      change=true;
       moveTo(90,115,80,100,moveDelay);
     }
     //=======任务五========
