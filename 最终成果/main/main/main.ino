@@ -429,7 +429,7 @@ void moveTo(int b,int l,int r,int c,int spd){
 //按固定时长播放一帧录制动作，避免角度差大时忽快忽慢
 void playFrame(int b,int l,int r,int c,int durationMs){
   int c1=(int)bottomAngle, c2=(int)leftAngle, c3=(int)rightAngle, c4=clawAngle;
-  int stepMs=15;
+  int stepMs=5;
   int steps=max(1,durationMs/stepMs);
 
   for(int i=1;i<=steps;i++){
@@ -466,7 +466,7 @@ void grabA(){
   moveTo(62,49,156,100,moveDelay);
   moveTo(62,49,156,30,moveDelay);
   moveTo(62,115,80,30,moveDelay);
-  moveTo(90,115,80,100,moveDelay);
+  home();
 }
 
 void grabB(){
@@ -478,7 +478,7 @@ void grabB(){
   moveTo(77,76,103,100,moveDelay);
   moveTo(77,76,103,30,moveDelay);
   moveTo(77,137,91,30,moveDelay);
-  moveTo(90,115,80,100,moveDelay);
+  home();
 }
 
 void grabC(){
@@ -490,7 +490,7 @@ void grabC(){
   moveTo(178,23,148,100,moveDelay);
   moveTo(178,23,148,30,moveDelay);
   moveTo(178,115,80,30,moveDelay);
-  moveTo(90,115,80,100,moveDelay);
+  home();
 }
 
 /*
@@ -668,7 +668,7 @@ void setup(){
   claw.attach(PIN_GRIPPER);
   //回中并等待串口
   home();
-  Serial.println("J 摇杆 | D 直线 | T 三角形 | P 坐标 | K4 回中");
+  Serial.println(F("J摇杆 O/S夹爪 H/L速度 b/l/r/c手动 A/B/C夹取 K1循环 K2/K3录播 K4回中 D直线 T三角形 K5/K6暂停取消 K7记录 K8折线 K9曲线"));
 }
 
 //=========主循环========
